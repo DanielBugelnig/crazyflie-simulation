@@ -1,0 +1,173 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <!-- Indoor room, interior 20 m (x) by 8 m (y), walls 3 m high, centered on the origin -->
+  <world name="indoor_room">
+    <physics type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+    <plugin name='gz::sim::systems::Physics' filename='libgz-sim-physics-system.so'/>
+    <plugin name='gz::sim::systems::UserCommands' filename='libgz-sim-user-commands-system.so'/>
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='libgz-sim-scene-broadcaster-system.so'/>
+    <plugin name='gz::sim::systems::Contact' filename='libgz-sim-contact-system.so'/>
+    <plugin name='gz::sim::systems::Imu' filename='libgz-sim-imu-system.so'/>
+    <plugin name='gz::sim::systems::AirPressure' filename='libgz-sim-air-pressure-system.so'/>
+    <plugin name='gz::sim::systems::Sensors' filename='libgz-sim-sensors-system.so'>
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <gravity>0 0 -9.80665</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <model name="floor">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20.4 8.4</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20.4 8.4</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="walls">
+      <static>true</static>
+      <link name="link">
+        <!-- long walls along x at y = +-4 -->
+        <collision name="wall_north_collision">
+          <pose>0 4.1 1.5 0 0 0</pose>
+          <geometry><box><size>20.4 0.2 3</size></box></geometry>
+        </collision>
+        <visual name="wall_north_visual">
+          <pose>0 4.1 1.5 0 0 0</pose>
+          <geometry><box><size>20.4 0.2 3</size></box></geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="wall_south_collision">
+          <pose>0 -4.1 1.5 0 0 0</pose>
+          <geometry><box><size>20.4 0.2 3</size></box></geometry>
+        </collision>
+        <visual name="wall_south_visual">
+          <pose>0 -4.1 1.5 0 0 0</pose>
+          <geometry><box><size>20.4 0.2 3</size></box></geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <!-- short walls along y at x = +-10 -->
+        <collision name="wall_east_collision">
+          <pose>10.1 0 1.5 0 0 0</pose>
+          <geometry><box><size>0.2 8 3</size></box></geometry>
+        </collision>
+        <visual name="wall_east_visual">
+          <pose>10.1 0 1.5 0 0 0</pose>
+          <geometry><box><size>0.2 8 3</size></box></geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="wall_west_collision">
+          <pose>-10.1 0 1.5 0 0 0</pose>
+          <geometry><box><size>0.2 8 3</size></box></geometry>
+        </collision>
+        <visual name="wall_west_visual">
+          <pose>-10.1 0 1.5 0 0 0</pose>
+          <geometry><box><size>0.2 8 3</size></box></geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1</ambient>
+            <diffuse>0.95 0.95 0.95 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- near-vertical light so the walls cast little shadow onto the floor -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <visualize>false</visualize>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.1 0.1 -1</direction>
+    </light>
+
+    <!-- ceiling lights so the walls are lit from inside the room -->
+    <light type="point" name="ceiling_light_1">
+      <cast_shadows>false</cast_shadows>
+      <visualize>false</visualize>
+      <pose>-6 0 2.8 0 0 0</pose>
+      <diffuse>0.6 0.6 0.6 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>20</range>
+        <constant>0.5</constant>
+        <linear>0.05</linear>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+    <light type="point" name="ceiling_light_2">
+      <cast_shadows>false</cast_shadows>
+      <visualize>false</visualize>
+      <pose>0 0 2.8 0 0 0</pose>
+      <diffuse>0.6 0.6 0.6 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>20</range>
+        <constant>0.5</constant>
+        <linear>0.05</linear>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+    <light type="point" name="ceiling_light_3">
+      <cast_shadows>false</cast_shadows>
+      <visualize>false</visualize>
+      <pose>6 0 2.8 0 0 0</pose>
+      <diffuse>0.6 0.6 0.6 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>20</range>
+        <constant>0.5</constant>
+        <linear>0.05</linear>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+  </world>
+</sdf>
