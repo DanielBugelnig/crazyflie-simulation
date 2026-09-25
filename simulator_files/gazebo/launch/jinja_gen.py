@@ -39,6 +39,8 @@ if __name__ == "__main__":
     parser.add_argument('--cffirm_udp_port', default=19950, help="Crazyflie Firmware UDP port")
     parser.add_argument('--cflib_udp_port', default=19850, help="Crazyflie python library UDP port")
     parser.add_argument('--cf_name', default="cf", help="Serial device for FMU")
+    parser.add_argument('--camera', type=str2bool, default=False, help="Add the AI-deck camera sensor")
+    parser.add_argument('--cam_frame_port', default=5200, help="UDP port the camera frames are sent to (crazysim_cpx.py)")
     parser.add_argument('--output-file', help="sdf output file")
     parser.add_argument('--stdout', action='store_true', default=False, help="dump to stdout instead of file")
     # parser.add_argument('--override_parameters_json_path', default='', help="json file with variables to override jinja parameters")
@@ -50,7 +52,9 @@ if __name__ == "__main__":
          'cf_id': args.cf_id, \
          'cffirm_udp_port': args.cffirm_udp_port, \
          'cflib_udp_port': args.cflib_udp_port, \
-         'cf_name': args.cf_name}
+         'cf_name': args.cf_name, \
+         'camera': args.camera, \
+         'cam_frame_port': args.cam_frame_port}
 
     # override_params_path = args.override_parameters_json_path
     # if not override_params_path:

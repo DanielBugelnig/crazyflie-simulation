@@ -4,6 +4,8 @@
 
 #include "crazysim_plugin.h"
 #include <future>
+#include <algorithm>
+#include <unistd.h>
 
 #include <gz/plugin/Register.hh>
 GZ_ADD_PLUGIN(crazyflie_interface::GzCrazyflieInterface,
@@ -34,6 +36,12 @@ GzCrazyflieInterface::~GzCrazyflieInterface() {
 	senderCfLibThread.join();
 	receiverCfFirmwareThread.join();
 	receiverCfLibThread.join();
+
+	camera_cv.notify_all();
+	if (senderCameraThread.joinable())
+		senderCameraThread.join();
+	if (fd_cam >= 0)
+		close(fd_cam);
 }
 
 void GzCrazyflieInterface::Configure(const gz::sim::Entity &_entity,
@@ -124,10 +132,25 @@ void GzCrazyflieInterface::Configure(const gz::sim::Entity &_entity,
 	m_motor_command_.m3 = 0;
 	m_motor_command_.m4 = 0;
 
+	// ---------- Setup socket for AI-deck camera frames (only if the model has a camera) -----------
+	if (sdfClone->HasElement("camFramePort")) {
+		if ((fd_cam = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			gzerr << "create camera socket failed " << std::endl;
+		} else {
+			memset((char *)&camaddr, 0, sizeof(camaddr));
+			camaddr.sin_family = AF_INET;
+			camaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+			camaddr.sin_port = htons(sdfClone->Get<int>("camFramePort"));
+			camera_enabled_ = true;
+		}
+	}
+
 	receiverCfFirmwareThread = std::thread(&GzCrazyflieInterface::recvCfFirmwareThread, this);
 	receiverCfLibThread = std::thread(&GzCrazyflieInterface::recvCfLibThread, this);
 	senderCfFirmwareThread = std::thread(&GzCrazyflieInterface::sendCfFirmwareThread, this);
 	senderCfLibThread = std::thread(&GzCrazyflieInterface::sendCfLibThread, this);
+	if (camera_enabled_)
+		senderCameraThread = std::thread(&GzCrazyflieInterface::sendCameraThread, this);
 	initializeSubsAndPub();
 }
 
@@ -195,7 +218,34 @@ void GzCrazyflieInterface::OdomCallback(const gz::msgs::Odometry& odom_msg) {
 	odom_queue.enqueue(msg);
 }
 
-bool GzCrazyflieInterface::sendCfFirmware(const uint8_t* data , uint32_t length) {	
+void GzCrazyflieInterface::CameraCallback(const gz::msgs::Image& image_msg) {
+	if (image_msg.pixel_format_type() != gz::msgs::L_INT8) {
+		if (!camera_format_warned) {
+			gzwarn << "AI-deck camera expects 8-bit grayscale (L8) images, dropping frames" << std::endl;
+			camera_format_warned = true;
+		}
+		return;
+	}
+	const uint32_t width = image_msg.width();
+	const uint32_t height = image_msg.height();
+	const uint32_t step = image_msg.step() ? image_msg.step() : width;
+	const std::string& data = image_msg.data();
+	if (data.size() < static_cast<size_t>(step) * height)
+		return;
+
+	{
+		std::lock_guard<std::mutex> lock(camera_mutex);
+		camera_frame.resize(static_cast<size_t>(width) * height);
+		for (uint32_t row = 0; row < height; row++)
+			memcpy(&camera_frame[static_cast<size_t>(row) * width], data.data() + static_cast<size_t>(row) * step, width);
+		camera_width = width;
+		camera_height = height;
+		camera_frame_ready = true;
+	}
+	camera_cv.notify_one();
+}
+
+bool GzCrazyflieInterface::sendCfFirmware(const uint8_t* data , uint32_t length) {
 	int transferred = sendto(fd, data, length, 0, (struct sockaddr *) &(remaddr), addrlen);
 	if (transferred <= 0)
 		throw std::runtime_error(strerror(errno));
@@ -304,14 +354,50 @@ void GzCrazyflieInterface::sendCfLibThread() {
 			sendCfLib(msgs[i].raw, msgs[i].size+1);
 		}
 	}
-} 
+}
+
+void GzCrazyflieInterface::sendCameraThread() {
+	std::vector<uint8_t> frame;
+	std::vector<uint8_t> packet(8 + kCameraChunkSize);
+	while(isPluginOn){
+		uint16_t width, height;
+		{
+			std::unique_lock<std::mutex> lock(camera_mutex);
+			camera_cv.wait_for(lock, std::chrono::milliseconds(100), [this] { return camera_frame_ready || !isPluginOn; });
+			if (!camera_frame_ready)
+				continue;
+			frame.swap(camera_frame);
+			width = camera_width;
+			height = camera_height;
+			camera_frame_ready = false;
+		}
+
+		// Chunk format read by crazysim_cpx.py: [seq:u16][total:u16][width:u16][height:u16][pixels], little endian
+		const uint16_t total = (frame.size() + kCameraChunkSize - 1) / kCameraChunkSize;
+		for (uint16_t seq = 0; seq < total; seq++) {
+			const size_t offset = static_cast<size_t>(seq) * kCameraChunkSize;
+			const size_t len = std::min(kCameraChunkSize, frame.size() - offset);
+			const uint16_t header[4] = {seq, total, width, height};
+			for (int i = 0; i < 4; i++) {
+				packet[2 * i] = header[i] & 0xFF;
+				packet[2 * i + 1] = header[i] >> 8;
+			}
+			memcpy(&packet[8], frame.data() + offset, len);
+			sendto(fd_cam, packet.data(), 8 + len, 0, (struct sockaddr *) &camaddr, sizeof(camaddr));
+		}
+	}
+}
 
 
 void GzCrazyflieInterface::initializeSubsAndPub() {
 	node_.Subscribe(cf_prefix + "_" + std::to_string(cf_id_) + imu_sub_topic_, &GzCrazyflieInterface::ImuCallback , this);
 	node_.Subscribe(cf_prefix + "_" + std::to_string(cf_id_) + barometer_sub_topic_, &GzCrazyflieInterface::BarometerCallback, this );
 	node_.Subscribe(cf_prefix + "_" + std::to_string(cf_id_) + odom_sub_topic_, &GzCrazyflieInterface::OdomCallback, this );
-	
+	if (camera_enabled_) {
+		node_.Subscribe(cf_prefix + "_" + std::to_string(cf_id_) + kDefaultCameraTopic, &GzCrazyflieInterface::CameraCallback, this );
+		gzmsg << "Forwarding camera frames to udp://127.0.0.1:" << ntohs(camaddr.sin_port) << std::endl;
+	}
+
 	motor_velocity_reference_pub_ = node_.Advertise<gz::msgs::Actuators>(cf_prefix + "_" + std::to_string(cf_id_) + motor_velocity_reference_pub_topic_);
 	
 	isInit = true;

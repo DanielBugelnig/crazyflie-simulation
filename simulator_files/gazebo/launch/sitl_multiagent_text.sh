@@ -1,6 +1,7 @@
 #!/bin/bash
 function cleanup() {
 	pkill -x cf2
+	pkill -f crazysim_cpx.py
 	pkill -9 ruby
 }
 
@@ -34,6 +35,8 @@ function spawn_model() {
 	set -- ${@} --cflib_udp_port $((19850+${N}))
 	set -- ${@} --cf_id $((${N}))
 	set -- ${@} --cf_name cf
+	set -- ${@} --camera ${camera}
+	set -- ${@} --cam_frame_port $((5200+${N}))
 	set -- ${@} --output-file /tmp/${MODEL}_${N}.sdf
 
 	python3 ${@}
@@ -45,27 +48,35 @@ function spawn_model() {
 	echo "starting instance $N in $(pwd)"
 	$build_path/cf2 $((19950+${N})) > out.log 2> error.log &
 
+	if [ "$camera" == "1" ]; then
+		echo "starting AI-deck bridge $N: camera on tcp://127.0.0.1:$((5050+${N}))"
+		python3 -u ${src_path}/tools/crazyflie-simulation/simulator_files/mujoco/crazysim_cpx.py --cpx-port $((5050+${N})) --cflib-port $((19850+${N})) --frame-port $((5200+${N})) > cpx.log 2>&1 &
+	fi
+
 	popd &>/dev/null
 }
 
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]
 then
 	echo "Description: This script is used to spawn multiple vehicles in gazebo from a coordinates list text file."
-	echo "Usage: $0 [-m <vehicle_model>] [-w <world>] [-f <file_name>]"
+	echo "Usage: $0 [-m <vehicle_model>] [-w <world>] [-f <file_name>] [-c]"
+	echo "  -c  enable the AI-deck camera, streamed on tcp://127.0.0.1:<5050+N>"
 	exit 1
 fi
 
-while getopts m:w:f: option
+while getopts m:w:f:c option
 do
 	case "${option}"
 	in
 		m) VEHICLE_MODEL=${OPTARG};;
+		c) CAMERA=1;;
 		w) WORLD=${OPTARG};;
 		f) COORDINATES_FILE=${OPTARG};;
 	esac
 done
 
 world=${WORLD:=crazysim_default}
+camera=${CAMERA:=0}
 vehicle_model=${VEHICLE_MODEL:="crazyflie"}
 coordinates_file=${COORDINATES_FILE:="single_origin.txt"}
 export CF2_SIM_MODEL=gz_${vehicle_model}
@@ -77,13 +88,14 @@ build_path=${src_path}/sitl_make/build
 
 echo "killing running crazyflie firmware instances"
 pkill -x cf2 || true
+pkill -f crazysim_cpx.py || true
 
 sleep 1
 
 source ${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/launch/setup_gz.bash ${src_path} ${build_path}
 
 echo "Starting gazebo"
-gz sim -s -r ${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/worlds/${world}.sdf -v 3 &
+gz sim -s -r --headless-rendering ${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/worlds/${world}.sdf -v 3 &
 sleep 3
 
 n=0
@@ -91,7 +103,7 @@ while IFS= read -r line || [ -n "$line" ];do
 	fields=($(printf "%s" "$line"|cut -d',' --output-delimiter=' ' -f1-))
 	spawn_model ${vehicle_model} $(($n)) ${fields[0]} ${fields[1]}
 	n=$(($n + 1))
-done < "$SCRIPT_DIR/drone_spawn_list/${coordinates_file}"
+done < "${src_path}/tools/crazyflie-simulation/drone_spawn_list/${coordinates_file}"
 
 trap "cleanup" SIGINT SIGTERM EXIT
 

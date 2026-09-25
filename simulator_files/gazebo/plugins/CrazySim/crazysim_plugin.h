@@ -11,6 +11,8 @@
 #include <deque>
 #include <stdio.h>
 #include <queue>
+#include <vector>
+#include <condition_variable>
 
 #include <gz/sim/System.hh>
 #include <gz/sim/Model.hh>
@@ -23,6 +25,7 @@
 #include <gz/msgs/fluid_pressure.pb.h>
 #include <gz/msgs/odometry.pb.h>
 #include <gz/msgs/actuators.pb.h>
+#include <gz/msgs/image.pb.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -40,7 +43,10 @@ static const std::string kDefaultNamespace = "";
 static const std::string kDefaultMagneticFieldTopic = "/mag";
 static const std::string kDefaultFluidPressureTopic = "/baro";
 static const std::string kDefaultOdomTopic = "/odom";
+static const std::string kDefaultCameraTopic = "/camera";
 static const std::string kDefaultCfPrefix = "cf";
+// Camera frames are split into UDP datagrams of at most this many pixel bytes
+static constexpr size_t kCameraChunkSize = 60000;
 // Constants
 static constexpr double kGasConstantNmPerKmolKelvin = 8314.32;
 static constexpr double kMeanMolecularAirWeightKgPerKmol = 28.9644;
@@ -105,6 +111,7 @@ namespace crazyflie_interface
 			void ImuCallback(const gz::msgs::IMU& imu_msg);
 			void BarometerCallback(const gz::msgs::FluidPressure& air_pressure_msg);
 			void OdomCallback(const gz::msgs::Odometry& odom_msg);
+			void CameraCallback(const gz::msgs::Image& image_msg);
 
 			// send and recv functions
 			bool sendCfFirmware(const uint8_t* data, uint32_t length);
@@ -174,6 +181,20 @@ namespace crazyflie_interface
 			// Crazyflie library sender thread
 			std::thread senderCfLibThread;
 			void sendCfLibThread();
+
+			// AI-deck camera: frames go to crazysim_cpx.py over UDP (only with <camFramePort>)
+			bool camera_enabled_ = false;
+			int fd_cam = -1;
+			struct sockaddr_in camaddr;
+			std::mutex camera_mutex;
+			std::condition_variable camera_cv;
+			std::vector<uint8_t> camera_frame;	// latest frame, replaced if not yet sent
+			uint16_t camera_width = 0;
+			uint16_t camera_height = 0;
+			bool camera_frame_ready = false;
+			bool camera_format_warned = false;
+			std::thread senderCameraThread;
+			void sendCameraThread();
 
 			// Motor command publisher
 			void writeMotors();

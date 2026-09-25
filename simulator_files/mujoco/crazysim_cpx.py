@@ -31,7 +31,6 @@ import argparse
 import socket
 import struct
 import threading
-import time
 
 # ---------------------------------------------------------------------------
 # CPX protocol constants  (matches cflib/cpx and AI-deck firmware)
@@ -109,6 +108,9 @@ class CrazySimCPX:
         self._crtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._crtp_sock.settimeout(0.5)
         self._crtp_addr = (host, cflib_port)
+        # Set once a client sends CRTP; image-only clients never register on the cflib
+        # port, so another cflib connection (e.g. udp://) can keep flying the drone
+        self._crtp_registered = threading.Event()
 
         self._running = False
 
@@ -155,6 +157,7 @@ class CrazySimCPX:
 
                 with self._cpx_lock:
                     self._cpx_client = None
+                self._crtp_registered.clear()
                 print(f'[cpx] Client disconnected')
 
         except KeyboardInterrupt:
@@ -176,6 +179,10 @@ class CrazySimCPX:
                 data = tcp_recv_exact(conn, data_len) if data_len > 0 else b''
 
                 if func == CPX_F_CRTP:
+                    if not self._crtp_registered.is_set():
+                        print(f'[cpx] Sending cflib handshake to {self._crtp_addr}')
+                        self._crtp_sock.sendto(bytes([0xFF]), self._crtp_addr)
+                        self._crtp_registered.set()
                     # Forward raw CRTP data to firmware via cflib UDP port
                     self._crtp_sock.sendto(data, self._crtp_addr)
 
@@ -193,33 +200,14 @@ class CrazySimCPX:
     # ------------------------------------------------------------------
     def _crtp_to_cpx_loop(self):
         """Forward CRTP UDP responses from firmware → CPX TCP client."""
-        # Wait until a CPX client connects before registering with crazysim
-        handshake_done = False
-
         while self._running:
-            # Send cflib handshake once a client is connected
-            if not handshake_done:
-                with self._cpx_lock:
-                    has_client = self._cpx_client is not None
-                if has_client:
-                    print(f'[cpx] Sending cflib handshake to {self._crtp_addr}')
-                    try:
-                        self._crtp_sock.sendto(bytes([0xFF]), self._crtp_addr)
-                    except OSError:
-                        pass
-                    handshake_done = True
-                else:
-                    time.sleep(0.1)
-                    continue
+            # Nothing to receive until a client has registered us on the cflib port
+            if not self._crtp_registered.wait(timeout=0.5):
+                continue
 
             try:
                 data, _ = self._crtp_sock.recvfrom(1024)
             except socket.timeout:
-                # Re-register if client reconnected
-                with self._cpx_lock:
-                    has_client = self._cpx_client is not None
-                if not has_client:
-                    handshake_done = False
                 continue
             except OSError:
                 break
