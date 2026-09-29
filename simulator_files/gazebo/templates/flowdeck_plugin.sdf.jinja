@@ -1,0 +1,11 @@
+{#- Flow deck v2 parameters for the CrazySim plugin (FlowDeckModel::Config).
+    Values come from jinja_gen.py: noise free without a profile, the profile's
+    flowdeck section otherwise. -#}
+{%- if flowdeck %}
+            <flowDeck>
+                <linkName>flowdeck</linkName>
+{%- for key, value in flowdeck_params.items() %}
+                <{{ key }}>{{ value }}</{{ key }}>
+{%- endfor %}
+            </flowDeck>
+{%- endif %}

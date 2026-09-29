@@ -1,0 +1,26 @@
+{#- IMU sensor of base_link. With a noise profile (imu.mode == 'sdf') Gazebo adds
+    BMI088 white noise and a turn-on bias per axis. gz-sensors 7 ignores the
+    dynamic_bias_* elements, so there is no bias drift in this mode. -#}
+        <sensor name="imu_sensor" type="imu">
+            <topic>/cf_{{ cf_id }}/imu</topic>
+            <always_on>1</always_on>
+            <update_rate>{{ imu.rate_hz }}</update_rate>
+{%- if imu.mode == 'sdf' %}
+            <imu>
+{%- for group, key in [('angular_velocity', 'gyro'), ('linear_acceleration', 'accel')] %}
+                <{{ group }}>
+{%- for axis in ['x', 'y', 'z'] %}
+                    <{{ axis }}>
+                        <noise type="gaussian">
+                            <mean>0</mean>
+                            <stddev>{{ imu[key].stddev[loop.index0] }}</stddev>
+                            <bias_mean>0</bias_mean>
+                            <bias_stddev>{{ imu[key].bias_stddev[loop.index0] }}</bias_stddev>
+                        </noise>
+                    </{{ axis }}>
+{%- endfor %}
+                </{{ group }}>
+{%- endfor %}
+            </imu>
+{%- endif %}
+        </sensor>

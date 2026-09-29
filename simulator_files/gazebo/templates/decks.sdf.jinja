@@ -1,0 +1,78 @@
+{#- Deck stack. Each deck is a fixed link, so Gazebo shifts the centre of gravity
+    and the inertia. Masses come from the noise profile (mass.*); positions are
+    estimates relative to base_link and the decks are approximated as boxes.
+    Stack of the real drone: Multi-ranger on top, AI-deck below the body and the
+    flow deck below the AI-deck. -#}
+{%- macro box_inertia(m, x, y, z) %}
+                <inertia>
+                    <ixx>{{ '%.4e' % (m * (y * y + z * z) / 12) }}</ixx>
+                    <iyy>{{ '%.4e' % (m * (x * x + z * z) / 12) }}</iyy>
+                    <izz>{{ '%.4e' % (m * (x * x + y * y) / 12) }}</izz>
+                    <ixy>0</ixy>
+                    <ixz>0</ixz>
+                    <iyz>0</iyz>
+                </inertia>
+{%- endmacro %}
+{%- if camera %}
+        <!-- AI-deck 1.1 below the body (30 x 28 x 6 mm) -->
+        <link name="aideck">
+            <pose>0 0 -0.008 0 0 0</pose>
+            <inertial>
+                <mass>{{ mass.aideck }}</mass>
+{{- box_inertia(mass.aideck, 0.030, 0.028, 0.006) }}
+            </inertial>
+            <!-- Himax HM01B0 at the front edge of the deck: forward facing, 324x244 grayscale.
+                 FOV, rate and the mounting error come from the profile. Lens distortion is
+                 applied by crazysim_cpx.py: gz-sensors 7 with ogre2 ignores <distortion>. -->
+            <sensor name="aideck_camera" type="camera">
+                <pose>0.015 0 0 {{ camera_params.rpy }}</pose>
+                <topic>/cf_{{ cf_id }}/camera</topic>
+                <always_on>1</always_on>
+                <update_rate>{{ camera_params.fps }}</update_rate>
+                <camera>
+                    <horizontal_fov>{{ camera_params.hfov }}</horizontal_fov>
+                    <image>
+                        <width>{{ camera_params.width }}</width>
+                        <height>{{ camera_params.height }}</height>
+                        <format>L8</format>
+                    </image>
+                    <clip>
+                        <near>0.02</near>
+                        <far>50</far>
+                    </clip>
+                </camera>
+            </sensor>
+        </link>
+        <joint name="aideck_joint" type="fixed">
+            <parent>base_link</parent>
+            <child>aideck</child>
+        </joint>
+{%- endif %}
+{%- if flowdeck %}
+        <!-- Flow deck v2 at the bottom of the stack (20 x 28 x 4 mm) -->
+        <link name="flowdeck">
+            <pose>0 0 {{ -0.013 if camera else -0.008 }} 0 0 0</pose>
+            <inertial>
+                <mass>{{ mass.flowdeck }}</mass>
+{{- box_inertia(mass.flowdeck, 0.020, 0.028, 0.004) }}
+            </inertial>
+        </link>
+        <joint name="flowdeck_joint" type="fixed">
+            <parent>base_link</parent>
+            <child>flowdeck</child>
+        </joint>
+{%- endif %}
+{%- if multiranger %}
+        <!-- Multi-ranger deck on top of the body (30 x 30 x 10 mm) -->
+        <link name="multiranger">
+            <pose>0 0 0.018 0 0 0</pose>
+            <inertial>
+                <mass>{{ mass.multiranger }}</mass>
+{{- box_inertia(mass.multiranger, 0.030, 0.030, 0.010) }}
+            </inertial>
+        </link>
+        <joint name="multiranger_joint" type="fixed">
+            <parent>base_link</parent>
+            <child>multiranger</child>
+        </joint>
+{%- endif %}

@@ -1,0 +1,101 @@
+# Crazyflie 2.1 with datasheet sensor values and nominal deck masses.
+# Copy this file and put measured values into it for a specific drone
+# (see docs/sensor_noise_proposal.md in CrazySim, section 9).
+#
+# Used by jinja_gen.py (launch scripts: -p cf21_datasheet) and by
+# tools/payload_params.py for the mass dependent firmware parameters.
+
+seed: 42                      # per-drone seed = seed + cf_id (IMU and flow deck models)
+
+mass:                         # [kg]
+  body: 0.027                 # bare drone incl. battery and props (Bitcraze spec)
+  aideck: 0.0044              # AI-deck 1.1
+  flowdeck: 0.0016            # Flow deck v2
+  multiranger: 0.0023         # Multi-ranger (nominal, weigh it)
+
+imu:                          # Bosch BMI088
+  enabled: true
+  mode: plugin                # plugin: CrazySim BMI088 model (filter, drift, scale, misalignment,
+                              #   vibration); sdf: Gazebo <noise> (white noise + turn-on bias only)
+  rate_hz: 1000
+  gyro:
+    noise_density: 2.44e-4    # rad/s/sqrt(Hz)  (0.014 deg/s/sqrt(Hz))
+    bandwidth_hz: 116         # BMI088_GYRO_BW_116_ODR_1000_HZ in the firmware driver
+    turn_on_bias_std: 8.7e-3  # rad/s           (datasheet +-1 deg/s ~ 2 sigma)
+    bias_random_walk: 1.3e-6  # rad/s/sqrt(s)   (upstream Allan measurement, re-measure)
+    scale_error_max: 0.01     # datasheet +-1 %
+    misalignment_deg: 1.0     # cross-axis + mounting (assumption)
+    warmup_amplitude: null    # rad/s, drift after power-up (fit a cold-boot log)
+    warmup_tau_s: null
+  accel:
+    noise_density: [1.57e-3, 1.57e-3, 1.86e-3]  # m/s^2/sqrt(Hz) (160/160/190 ug/sqrt(Hz))
+    bandwidth_hz: null        # OSR4 at 1600 Hz: take the 3 dB value from the datasheet acc_conf table
+    turn_on_bias_std: 0.098   # m/s^2           (datasheet +-20 mg ~ 2 sigma)
+    bias_random_walk: 1.0e-6  # m/s^2/sqrt(s)   (upstream Allan measurement, re-measure)
+    scale_error_max: 0.0
+    misalignment_deg: 1.0
+  vibration:                  # rotor imbalance (1x) and blade pass (2x), per motor
+    enabled: false            # fit to a hover log first (proposal section 9, item 3)
+    ref_rot_velocity: 2100    # rad/s the amplitudes refer to (hover with AI-deck + flow deck)
+    accel_1x: null            # m/s^2 in the rotor plane
+    accel_2x: null
+    gyro_1x: null             # rad/s
+    gyro_2x: null
+    z_ratio: null             # z amplitude relative to the in-plane one
+    motor_spread: 0.3         # relative amplitude spread between the motors
+
+flowdeck:                     # Flow deck v2, used when the deck is mounted (-d flowdeck)
+  enabled: true               # false: noise free sensors over a textured floor
+  tof:                        # VL53L1x (medium distance mode, 25 ms budget, 40 Hz)
+    max_range_m: 3.0          # dark room, grey floor (check with a recording)
+    noise: true               # sigma(d) = 0.0025 (1 + exp(2.9214 (d - 2.5))) as in zranger2.c
+    invalid_distance_m: 8.19  # reported without a valid return (placeholder, the firmware ignores >= 5 m)
+  flow:                       # PMW3901, read every 10 ms
+    noise_counts: 2.0         # per read (placeholder for low texture; firmware assumes 2.0)
+    scale_error_max: 0.05     # per axis, drawn per drone
+    yaw_misalignment_deg: 2.0 # deck vs IMU, drawn per drone
+    min_height_m: 0.08        # PMW3901 minimum working distance
+  floor:                      # low-texture floor of the real test area (placeholders until recorded)
+    squal_mean: 35            # motion.squal
+    squal_std: 12
+    squal_threshold: 15       # below: no motion reported, the frame is lost
+    shutter_mean: 2500        # motion.shutter (long shutter = little light/texture)
+    shutter_std: 400
+    quality_tau_s: 0.3        # correlation time of squal/shutter over the floor
+
+camera:                       # AI-deck, Himax HM01B0 (-d aideck). Sensor values are placeholders
+  enabled: true               #   until the dark/flat/checkerboard recordings (proposal section 9, item 8)
+  capture_fps: 30             # Gazebo render rate (rendering costs real-time factor)
+  horizontal_fov: 2.05        # rad (117 deg): rendered field of view, must cover the lens' rays;
+                              #   with the calibration below 2.05 is the smallest without black borders
+  stream_size: [324, 244]     # AI-deck stream resolution
+  render_scale: 2             # Gazebo renders 648x488 and the lens model resamples it to the stream size;
+                              #   render focal 196 px >= real 177 px, so no detail is stretched (4x render cost)
+  distortion: {k1: -0.09629670299141545, k2: 0.005861351509604647, k3: 0.0, p1: -3.5530787269707684e-05, p2: 0.0008847188798398622, fx: 177.34797503700591, fy: 176.90021158090644, cx: 164.67666941576744, cy: 165.29001238101867}
+                              # OpenCV radtan calibration at 324x244 (applied in crazysim_cpx.py; gz ogre2 ignores <distortion>)
+  mount_error_deg: 1.5        # random camera roll/pitch/yaw vs the IMU, drawn per drone
+  gamma: 2.2                  # display gamma of the rendered image, undone first
+  output_gamma: 1.0           # linear raw sensor output, as streamed by the AI-deck (noise values below are in raw DN)
+  defocus_sigma_px: 0.6       # fixed-focus lens (placeholder)
+  exposure_time_s: 0.008      # at relative exposure 1 (motion blur, placeholder)
+  row_time_s: 3.0e-5          # rolling shutter readout per row (placeholder; null = global shutter)
+  # Measured 2026-09-29 with ~/bitcraze/dev/camera_noise.py and camera_vignetting.py (130 dark, 33 white frames)
+  vignetting: [0.7409, -0.0679]      # gain 1 - v1 r^2 - v2 r^4 (corner gain 0.33), fitted at the principal point
+  vignetting_center: [164.7, 165.3]  # px, principal point of the calibration
+  auto_exposure:              # exposure time first, then analog gain
+    target: 0.18              # mean linear brightness (real indoor frames average 40-55 DN)
+    tau_frames: 4
+    max_exposure: 2.0         # relative to exposure_time_s
+    max_gain: 8.0
+  # Noise vs signal: read 1.2 DN and full well chosen so the total noise at 52 DN is the measured 1.53 DN
+  # (white frames; brighter levels were dominated by light flicker), black level fitted to the dark mean
+  full_well_e: 14700          # electrons at 255 DN at the recording's gain
+  read_noise_e: 69            # electrons rms (= 1.2 DN)
+  black_level_dn: 1.1         # output offset [DN]; noise below 0 is clipped like on the sensor
+  prnu_std: 0.012             # pixel gain spread, upper bound (wall texture included)
+  dsnu_std_dn: 0.36           # pixel offset spread [DN] (slightly low: dark values clipped at 0)
+  column_noise_dn: 0.14       # column offset spread [DN] (slightly low, same reason)
+  stream_fps: null            # WiFi stream: measure with aideck_camera.py on the real deck
+  latency_s: 0.0
+  latency_jitter_s: 0.0
+  drop_prob: 0.0

@@ -1,0 +1,23 @@
+{#- BMI088 error model of the CrazySim plugin (ImuErrorModel::Config), used when
+    the profile sets imu.mode: plugin. The rotor lag of the vibration model uses
+    the time constants of the gz motor model. -#}
+{%- if imu.mode == 'plugin' %}
+            <imuNoise>
+                <rate>{{ imu.rate_hz }}</rate>
+                <seed>{{ imu.seed }}</seed>
+{%- for key in ['gyro', 'accel'] %}
+                <{{ key }}>
+{%- for name, value in imu[key].plugin.items() %}
+                    <{{ name }}>{{ value }}</{{ name }}>
+{%- endfor %}
+                </{{ key }}>
+{%- endfor %}
+                <vibration>
+{%- for name, value in imu.vibration.items() %}
+                    <{{ name }}>{{ value }}</{{ name }}>
+{%- endfor %}
+                    <tauUp>{{ motor_tau_up }}</tauUp>
+                    <tauDown>{{ motor_tau_down }}</tauDown>
+                </vibration>
+            </imuNoise>
+{%- endif %}

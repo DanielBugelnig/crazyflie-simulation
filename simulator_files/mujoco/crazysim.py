@@ -88,7 +88,7 @@ SENSOR_FLOW      = 6
 GEN_LOC_EXT_POSE = 0x08
 
 # LSB conversion factors (firmware sensors_sitl.c)
-SENSORS_G_PER_LSB   = (2.0 * 16.0)   / 65536.0   # G / LSB
+SENSORS_G_PER_LSB   = (2.0 * 24.0)   / 65536.0   # G / LSB (+-24 g, must match sensors_sitl.c)
 SENSORS_DEG_PER_LSB = (2.0 * 2000.0) / 65536.0   # deg/s / LSB
 GRAVITY             = 9.81
 DEG_TO_RAD          = math.pi / 180.0

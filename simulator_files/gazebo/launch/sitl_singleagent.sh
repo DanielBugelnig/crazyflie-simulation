@@ -36,6 +36,9 @@ function spawn_model() {
 	set -- ${@} --cf_name cf
 	set -- ${@} --camera ${camera}
 	set -- ${@} --cam_frame_port $((5200+${N}))
+	set -- ${@} --flowdeck ${flowdeck}
+	set -- ${@} --multiranger ${multiranger}
+	[ -n "${profile}" ] && set -- ${@} --noise_profile ${profile}
 	set -- ${@} --output-file /tmp/${MODEL}_${N}.sdf
 
 	python3 ${@}
@@ -49,7 +52,7 @@ function spawn_model() {
 
 	if [ "$camera" == "1" ]; then
 		echo "starting AI-deck bridge $N: camera on tcp://127.0.0.1:$((5050+${N}))"
-		python3 -u ${src_path}/tools/crazyflie-simulation/simulator_files/mujoco/crazysim_cpx.py --cpx-port $((5050+${N})) --cflib-port $((19850+${N})) --frame-port $((5200+${N})) > cpx.log 2>&1 &
+		python3 -u ${src_path}/tools/crazyflie-simulation/simulator_files/mujoco/crazysim_cpx.py --cpx-port $((5050+${N})) --cflib-port $((19850+${N})) --frame-port $((5200+${N})) --cf-id ${N} ${profile:+--profile ${profile}} > cpx.log 2>&1 &
 	fi
 
 	popd &>/dev/null
@@ -58,17 +61,24 @@ function spawn_model() {
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]
 then
     echo "Description: This script is used to spawn a single vehicle in gazebo."
-	echo "Usage: $0 [-m <vehicle_model>] [-x <x_coordinate>] [-y <y_coordinate>] [-w <world>] [-c]"
+	echo "Usage: $0 [-m <vehicle_model>] [-x <x_coordinate>] [-y <y_coordinate>] [-w <world>] [-c] [-d <decks>] [-p <noise_profile>] [-H]"
 	echo "  -c  enable the AI-deck camera, streamed on tcp://127.0.0.1:<5050+N>"
+	echo "  -d  comma separated deck stack: aideck (same as -c), flowdeck, multiranger"
+	echo "  -p  noise profile: path or name in simulator_files/gazebo/noise_profiles (e.g. cf21_datasheet)"
+	echo "  -w  world: name in simulator_files/gazebo/worlds, or a path to an .sdf file (models in ../models)"
+	echo "  -H  headless: no Gazebo GUI (saves GPU time; stop with Ctrl+C)"
 	exit 1
 fi
 
-while getopts m:x:y:w:c option
+while getopts m:x:y:w:cd:p:H option
 do
 	case "${option}"
 	in
 		m) VEHICLE_MODEL=${OPTARG};;
 		c) CAMERA=1;;
+		d) DECKS=${OPTARG};;
+		p) PROFILE=${OPTARG};;
+		H) HEADLESS=1;;
         x) X_CORD=${OPTARG};;
         y) Y_CORD=${OPTARG};;
 		w) WORLD=${OPTARG};;
@@ -77,6 +87,19 @@ done
 
 world=${WORLD:=crazysim_default}
 camera=${CAMERA:=0}
+flowdeck=0
+multiranger=0
+for deck in ${DECKS//,/ }; do
+	case "${deck}" in
+		aideck) camera=1;;
+		flowdeck) flowdeck=1;;
+		multiranger) multiranger=1;;
+		*) echo "ERROR: unknown deck '${deck}' (supported: aideck, flowdeck, multiranger)"; exit 1;;
+	esac
+done
+profile=${PROFILE:=}
+# spawn_model runs in the build directory, so make a relative profile path absolute
+[ -n "${profile}" ] && [ -f "${profile}" ] && profile=$(realpath "${profile}")
 x_cord=${X_CORD:=0}
 y_cord=${Y_CORD:=0}
 vehicle_model=${VEHICLE_MODEL:="crazyflie"}
@@ -95,8 +118,19 @@ sleep 1
 
 source ${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/launch/setup_gz.bash ${src_path} ${build_path}
 
+# -w: a world name from simulator_files/gazebo/worlds, or a path to an .sdf file.
+# For a file, the world name comes from <world name=...>, and the models next to
+# it (<world dir>/../models) are found through model:// URIs.
+if [ -f "${world}" ]; then
+	world_file=$(realpath "${world}")
+	world=$(grep -oP '<world\s+name="\K[^"]+' "${world_file}" | head -1)
+	export GZ_SIM_RESOURCE_PATH=${GZ_SIM_RESOURCE_PATH}:$(dirname "${world_file}"):$(dirname "$(dirname "${world_file}")")/models
+else
+	world_file=${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/worlds/${world}.sdf
+fi
+
 echo "Starting gazebo"
-gz sim -s -r --headless-rendering ${src_path}/tools/crazyflie-simulation/simulator_files/gazebo/worlds/${world}.sdf -v 3 &
+gz sim -s -r --headless-rendering ${world_file} -v 3 &
 sleep 3
 
 n=0
@@ -104,6 +138,11 @@ spawn_model ${vehicle_model} $(($n)) ${x_cord} ${y_cord}
 
 trap "cleanup" SIGINT SIGTERM EXIT
 
-echo "Starting gazebo gui"
-#gdb ruby
-gz sim -g
+if [ -n "${HEADLESS}" ]; then
+	echo "Running headless (no GUI), Ctrl+C to stop"
+	wait
+else
+	echo "Starting gazebo gui"
+	#gdb ruby
+	gz sim -g
+fi

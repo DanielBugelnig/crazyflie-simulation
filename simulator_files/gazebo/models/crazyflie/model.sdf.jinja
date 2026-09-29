@@ -1,11 +1,22 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
     <model name="crazyflie_{{ cf_id }}">
+{#- Motor model shared by the gz motor plugins and the CrazySim plugin
+    (PWM -> thrust: firmware thrust curve (powerDist.pwmToThrustA/B)) -#}
+{%- set motor_constant = 1.7965e-8 %}
+{%- set motor_tau_up = 0.0125 %}
+{%- set motor_tau_down = 0.025 %}
+{%- set max_rot_velocity = 3052 %}
+{%- set pwm_to_thrust_a = 0.091492681 %}
+{%- set pwm_to_thrust_b = 0.067673604 %}
+{#- Bare drone incl. battery and props [kg]; a measured value goes in the profile (mass.body) -#}
+{%- set prop_mass = 0.0008 %}
+{%- set body_mass = mass.body if mass.body is not none else 0.027 %}
         <pose>0 0 0 0 0 0</pose>
         <static>false</static>
         <link name="base_link">
             <inertial>
-                <mass>0.025</mass>
+                <mass>{{ '%.6f' % (body_mass - 4 * prop_mass) }}</mass>
                 <inertia>
                     <ixx>0.000016572</ixx>
                     <ixy>0.00</ixy>
@@ -45,32 +56,7 @@
             </pressure>
             </air_pressure>
         </sensor>
-        <sensor name="imu_sensor" type="imu">
-            <topic>/cf_{{ cf_id }}/imu</topic>
-            <always_on>1</always_on>
-            <update_rate>1000</update_rate>
-        </sensor>
-        {% if camera %}
-        <!-- AI-deck camera (Himax HM01B0): forward facing, 324x244 grayscale -->
-        <sensor name="aideck_camera" type="camera">
-            <pose>0.03 0 0 0 0 0</pose>
-            <topic>/cf_{{ cf_id }}/camera</topic>
-            <always_on>1</always_on>
-            <update_rate>60</update_rate>
-            <camera>
-                <horizontal_fov>1.50</horizontal_fov>
-                <image>
-                    <width>324</width>
-                    <height>244</height>
-                    <format>L8</format>
-                </image>
-                <clip>
-                    <near>0.02</near>
-                    <far>50</far>
-                </clip>
-            </camera>
-        </sensor>
-        {% endif %}
+{% include 'templates/imu.sdf.jinja' %}
         </link>
         <link name="m1_prop">
             <gravity>true</gravity>
@@ -240,6 +226,7 @@
                 </dynamics>
             </axis>
         </joint>
+{% include 'templates/decks.sdf.jinja' %}
         <plugin
             filename="gz-sim-multicopter-motor-model-system"
             name="gz::sim::systems::MulticopterMotorModel">
@@ -247,10 +234,10 @@
             <jointName>m1_joint</jointName>
             <linkName>m1_prop</linkName>
             <turningDirection>ccw</turningDirection>
-            <timeConstantUp>0.0125</timeConstantUp>
-            <timeConstantDown>0.025</timeConstantDown>
-            <maxRotVelocity>3052</maxRotVelocity>
-            <motorConstant>1.7965e-8</motorConstant>
+            <timeConstantUp>{{ motor_tau_up }}</timeConstantUp>
+            <timeConstantDown>{{ motor_tau_down }}</timeConstantDown>
+            <maxRotVelocity>{{ max_rot_velocity }}</maxRotVelocity>
+            <motorConstant>{{ motor_constant }}</motorConstant>
             <momentConstant>0.005964552</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
             <actuator_number>0</actuator_number>
@@ -267,10 +254,10 @@
             <jointName>m2_joint</jointName>
             <linkName>m2_prop</linkName>
             <turningDirection>cw</turningDirection>
-            <timeConstantUp>0.0125</timeConstantUp>
-            <timeConstantDown>0.025</timeConstantDown>
-            <maxRotVelocity>3052</maxRotVelocity>
-            <motorConstant>1.7965e-8</motorConstant>
+            <timeConstantUp>{{ motor_tau_up }}</timeConstantUp>
+            <timeConstantDown>{{ motor_tau_down }}</timeConstantDown>
+            <maxRotVelocity>{{ max_rot_velocity }}</maxRotVelocity>
+            <motorConstant>{{ motor_constant }}</motorConstant>
             <momentConstant>0.005964552</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
             <actuator_number>1</actuator_number>
@@ -287,10 +274,10 @@
             <jointName>m3_joint</jointName>
             <linkName>m3_prop</linkName>
             <turningDirection>ccw</turningDirection>
-            <timeConstantUp>0.0125</timeConstantUp>
-            <timeConstantDown>0.025</timeConstantDown>
-            <maxRotVelocity>3052</maxRotVelocity>
-            <motorConstant>1.7965e-8</motorConstant>
+            <timeConstantUp>{{ motor_tau_up }}</timeConstantUp>
+            <timeConstantDown>{{ motor_tau_down }}</timeConstantDown>
+            <maxRotVelocity>{{ max_rot_velocity }}</maxRotVelocity>
+            <motorConstant>{{ motor_constant }}</motorConstant>
             <momentConstant>0.005964552</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
             <actuator_number>2</actuator_number>
@@ -307,10 +294,10 @@
             <jointName>m4_joint</jointName>
             <linkName>m4_prop</linkName>
             <turningDirection>cw</turningDirection>
-            <timeConstantUp>0.0125</timeConstantUp>
-            <timeConstantDown>0.025</timeConstantDown>
-            <maxRotVelocity>3052</maxRotVelocity>
-            <motorConstant>1.7965e-8</motorConstant>
+            <timeConstantUp>{{ motor_tau_up }}</timeConstantUp>
+            <timeConstantDown>{{ motor_tau_down }}</timeConstantDown>
+            <maxRotVelocity>{{ max_rot_velocity }}</maxRotVelocity>
+            <motorConstant>{{ motor_constant }}</motorConstant>
             <momentConstant>0.005964552</momentConstant>
             <commandSubTopic>command/motor_speed</commandSubTopic>
             <actuator_number>3</actuator_number>
@@ -339,6 +326,14 @@
             <cflib_port>{{ cflib_udp_port }}</cflib_port>
             <cfPrefix>{{ cf_name }}</cfPrefix>
             <cfId>{{ cf_id }}</cfId>
+            <pwmToThrustA>{{ pwm_to_thrust_a }}</pwmToThrustA>
+            <pwmToThrustB>{{ pwm_to_thrust_b }}</pwmToThrustB>
+            <motorConstant>{{ motor_constant }}</motorConstant>
+            <maxRotVelocity>{{ max_rot_velocity }}</maxRotVelocity>
+            <sendExtPose>{{ 'true' if send_ext_pose else 'false' }}</sendExtPose>
+            <decks>{{ deck_flags }}</decks>
+{% include 'templates/flowdeck_plugin.sdf.jinja' %}
+{% include 'templates/imu_plugin.sdf.jinja' %}
             {% if camera %}
             <camFramePort>{{ cam_frame_port }}</camFramePort>
             {% endif %}

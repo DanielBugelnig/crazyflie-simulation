@@ -13,6 +13,7 @@
 #include <queue>
 #include <vector>
 #include <condition_variable>
+#include <memory>
 
 #include <gz/sim/System.hh>
 #include <gz/sim/Model.hh>
@@ -35,6 +36,9 @@
 /* Fast library for a reader writer queue */
 #include "blockingconcurrentqueue.h"
 #include "CrtpUtils.h"
+#include "flowdeck_model.h"
+#include "imu_model.h"
+#include "raycaster.h"
 
 // Default topic names
 static const std::string kDefaultMotorVelocityReferencePubTopic = "/command/motor_speed";
@@ -47,6 +51,13 @@ static const std::string kDefaultCameraTopic = "/camera";
 static const std::string kDefaultCfPrefix = "cf";
 // Camera frames are split into UDP datagrams of at most this many pixel bytes
 static constexpr size_t kCameraChunkSize = 60000;
+// Chunk header for crazysim_cpx.py: [magic u16][seq u16][total u16][width u16][height u16]
+// [stamp_us u64][wx f32][wy f32][wz f32] (body rates in rad/s), little endian. The magic
+// tells it apart from the older 8-byte header [seq][total][width][height] (MuJoCo).
+static constexpr uint16_t kCameraFrameMagic = 0xCF01;
+static constexpr size_t kCameraHeaderSize = 30;
+// Longest ToF ray; the VL53L1x range limit itself is applied by FlowDeckModel
+static constexpr double kTofRayRange = 5.0;
 // Constants
 static constexpr double kGasConstantNmPerKmolKelvin = 8314.32;
 static constexpr double kMeanMolecularAirWeightKgPerKmol = 28.9644;
@@ -107,6 +118,15 @@ namespace crazyflie_interface
 			// bool enable_logging_packets;
 			std::string cf_prefix;
 
+			// PWM -> rotor speed, must match the SDF motor model
+			ThrustCurve thrust_curve_;
+			// Forward the ground truth pose as external pose (off for flow deck flight)
+			bool send_ext_pose_ = true;
+			// Simulated deck stack (SIM_DECK_* flags), reported to the firmware
+			uint8_t deck_flags_ = 0;
+			bool report_decks_ = false;
+			uint32_t imu_count_ = 0;
+
 
 			void ImuCallback(const gz::msgs::IMU& imu_msg);
 			void BarometerCallback(const gz::msgs::FluidPressure& air_pressure_msg);
@@ -147,6 +167,7 @@ namespace crazyflie_interface
 			moodycamel::BlockingConcurrentQueue<crtpPacket_t> imu_queue;
 			moodycamel::BlockingConcurrentQueue<crtpPacket_t> barometer_queue;
 			moodycamel::BlockingConcurrentQueue<crtpPacket_t> odom_queue;
+			moodycamel::BlockingConcurrentQueue<crtpPacket_t> flowdeck_queue;
 			moodycamel::BlockingConcurrentQueue<crtpPacket_t> cflib_to_firmware_queue;
 			moodycamel::BlockingConcurrentQueue<crtpPacket_t> firmware_to_cflib_queue;
 
@@ -191,6 +212,8 @@ namespace crazyflie_interface
 			std::vector<uint8_t> camera_frame;	// latest frame, replaced if not yet sent
 			uint16_t camera_width = 0;
 			uint16_t camera_height = 0;
+			uint64_t camera_stamp_us = 0;		// sim time of the frame
+			gz::math::Vector3d camera_rates;	// body rates when the frame was taken
 			bool camera_frame_ready = false;
 			bool camera_format_warned = false;
 			std::thread senderCameraThread;
@@ -198,6 +221,22 @@ namespace crazyflie_interface
 
 			// Motor command publisher
 			void writeMotors();
+
+			// BMI088 error model (only with <imuNoise>)
+			std::unique_ptr<ImuErrorModel> imu_model_;
+			// True body rates from the IMU sensor, for the camera frames
+			std::mutex body_rates_mutex_;
+			gz::math::Vector3d body_rates_;
+
+			// Flow deck v2 (only with <flowDeck>): VL53L1x from rays against the
+			// collision shapes, PMW3901 from the true state of base_link
+			std::unique_ptr<FlowDeckModel> flowdeck_;
+			RayCaster raycaster_;
+			double raycaster_update_time_ = 0.0;
+			gz::sim::Entity model_entity_ = gz::sim::kNullEntity;
+			gz::sim::Entity base_link_ = gz::sim::kNullEntity;
+			void updateFlowDeck(const gz::sim::UpdateInfo &_info,
+								const gz::sim::EntityComponentManager &_ecm);
 
 	};
 }

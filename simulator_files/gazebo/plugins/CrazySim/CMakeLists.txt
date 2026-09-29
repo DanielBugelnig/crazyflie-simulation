@@ -38,7 +38,7 @@ set(GZ_MSGS_VER ${gz-msgs_VERSION_MAJOR})
 find_package(PkgConfig REQUIRED)
 
 #======================================= CrazySim PLUGIN ==========================================//
-add_library(gz_crazysim_plugin SHARED crazysim_plugin.cpp)
+add_library(gz_crazysim_plugin SHARED crazysim_plugin.cpp flowdeck_model.cpp imu_model.cpp raycaster.cpp)
 set_property(TARGET gz_crazysim_plugin PROPERTY CXX_STANDARD 17)
 target_link_libraries(gz_crazysim_plugin 
   PRIVATE

@@ -28,9 +28,12 @@ Usage:
 """
 
 import argparse
+import os
+import random
 import socket
 import struct
 import threading
+import time
 
 # ---------------------------------------------------------------------------
 # CPX protocol constants  (matches cflib/cpx and AI-deck firmware)
@@ -50,6 +53,25 @@ CPX_HEADER_SIZE = 2   # routing byte + function byte
 CPX_MTU         = 1022  # WiFi CPX max payload
 
 CPX_IMG_MAGIC = 0xBC
+
+# Frame chunks from the simulator. Gazebo: [magic u16][seq u16][total u16][width u16]
+# [height u16][stamp_us u64][wx f32][wy f32][wz f32] (body rates in rad/s).
+# MuJoCo: [seq u16][total u16][width u16][height u16]. Little endian.
+FRAME_MAGIC = 0xCF01
+FRAME_HEADER = struct.Struct('<HHHHHQfff')
+FRAME_HEADER_OLD = struct.Struct('<HHHH')
+
+PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gazebo', 'noise_profiles')
+
+
+def load_profile(name):
+    """Noise profile given as a path or as a name in simulator_files/gazebo/noise_profiles."""
+    import yaml
+    for path in (name, os.path.join(PROFILE_DIR, name), os.path.join(PROFILE_DIR, name + '.yaml')):
+        if os.path.isfile(path):
+            with open(path) as f:
+                return yaml.safe_load(f) or {}
+    raise FileNotFoundError(f"noise profile '{name}' not found")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +115,7 @@ class CrazySimCPX:
     """ESP32 emulator — CPX TCP server + CRTP/UDP bridge + camera framer."""
 
     def __init__(self, cpx_port: int, cflib_port: int, frame_port: int,
-                 host: str = '127.0.0.1'):
+                 host: str = '127.0.0.1', profile: str = '', cf_id: int = 0):
         self._cpx_port = cpx_port
         self._cflib_host = host
         self._cflib_port = cflib_port
@@ -113,6 +135,24 @@ class CrazySimCPX:
         self._crtp_registered = threading.Event()
 
         self._running = False
+
+        # AI-deck camera model and WiFi link, from the camera section of the profile
+        self._camera_model = None
+        self._link = {'stream_fps': None, 'latency_s': 0.0, 'latency_jitter_s': 0.0, 'drop_prob': 0.0}
+        self._last_frame_time = 0.0
+        self._pending = []          # (send_time, width, height, pixels), ordered
+        self._pending_cv = threading.Condition()
+        camera = (load_profile(profile).get('camera') or {}) if profile else {}
+        if camera.get('enabled', False):
+            import numpy as np
+            from camera_model import DEFAULTS, CameraModel
+            self._np = np
+            seed = int(load_profile(profile).get('seed', 0)) + cf_id + 2000
+            self._camera_model = CameraModel({k: camera[k] for k in DEFAULTS if k in camera}, seed)
+            self._link.update({k: camera[k] for k in self._link if camera.get(k) is not None})
+            self._rng = random.Random(seed)
+            self._warned_fov = False
+            print(f'[cpx] Camera model from {profile}, link {self._link}')
 
     def run(self):
         self._running = True
@@ -238,6 +278,7 @@ class CrazySimCPX:
         frame_sock.bind(('127.0.0.1', self._frame_port))
         frame_sock.settimeout(0.5)
         print(f'[cpx] Camera frame receiver on udp://127.0.0.1:{self._frame_port}')
+        threading.Thread(target=self._delayed_sender_loop, daemon=True).start()
 
         chunks = {}  # seq → data
         expected_total = 0
@@ -250,10 +291,16 @@ class CrazySimCPX:
             except OSError:
                 break
 
-            if len(pkt) < 8:
+            if len(pkt) >= FRAME_HEADER.size and struct.unpack_from('<H', pkt)[0] == FRAME_MAGIC:
+                _, seq, total, width, height, _, wx, wy, wz = FRAME_HEADER.unpack_from(pkt)
+                chunk_data = pkt[FRAME_HEADER.size:]
+                rates = (wx, wy, wz)
+            elif len(pkt) >= FRAME_HEADER_OLD.size:
+                seq, total, width, height = FRAME_HEADER_OLD.unpack_from(pkt)
+                chunk_data = pkt[FRAME_HEADER_OLD.size:]
+                rates = None
+            else:
                 continue
-            seq, total, width, height = struct.unpack('<HHHH', pkt[:8])
-            chunk_data = pkt[8:]
 
             # New frame starting
             if seq == 0:
@@ -268,37 +315,82 @@ class CrazySimCPX:
             # Reassemble
             pixels = b''.join(chunks[i] for i in range(expected_total))
             chunks = {}
-            size = len(pixels)
-
-            with self._cpx_lock:
-                client = self._cpx_client
-            if client is None:
-                continue
-
-            # Build CPX APP image header (11 bytes)
-            img_header = struct.pack('<BHHBBI',
-                                    CPX_IMG_MAGIC,
-                                    width, height,
-                                    8, 0, size)
-            header_pkt = cpx_build(CPX_T_GAP8, CPX_T_HOST,
-                                  CPX_F_APP, img_header, last=False)
-
-            # Split pixel data into CPX MTU-sized chunks
-            data_pkts = bytearray()
-            offset = 0
-            while offset < size:
-                chunk = pixels[offset:offset + CPX_MTU]
-                offset += len(chunk)
-                is_last = offset >= size
-                data_pkts.extend(cpx_build(CPX_T_GAP8, CPX_T_HOST,
-                                           CPX_F_APP, chunk, last=is_last))
-
-            try:
-                client.sendall(header_pkt + bytes(data_pkts))
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                pass
+            self._on_frame(width, height, pixels, rates)
 
         frame_sock.close()
+
+    def _on_frame(self, width, height, pixels, rates):
+        """Camera model, then the WiFi link: frame rate, drops, latency."""
+        if self._camera_model is None:
+            self._send_frame(width, height, pixels)
+            return
+        link = self._link
+        now = time.monotonic()
+        if link['stream_fps'] and now - self._last_frame_time < 1.0 / link['stream_fps']:
+            return
+        self._last_frame_time = now
+        if self._rng.random() < link['drop_prob']:
+            return
+        frame = self._np.frombuffer(pixels, self._np.uint8).reshape(height, width)
+        out = self._camera_model.process(frame, rates)       # may be smaller than the render
+        height, width = out.shape
+        pixels = out.tobytes()
+        if self._camera_model.distortion_outside > 0 and not self._warned_fov:
+            self._warned_fov = True
+            print(f'[cpx] Lens distortion: {self._camera_model.distortion_outside:.0%} of the pixels see '
+                  f'rays outside the rendered image (black); raise camera.horizontal_fov')
+        delay = max(0.0, link['latency_s'] + self._rng.gauss(0.0, link['latency_jitter_s']))
+        if delay == 0.0:
+            self._send_frame(width, height, pixels)
+            return
+        with self._pending_cv:
+            # frames keep their order, like on a TCP stream
+            send_time = max(now + delay, self._pending[-1][0] if self._pending else 0.0)
+            self._pending.append((send_time, width, height, pixels))
+            self._pending_cv.notify()
+
+    def _delayed_sender_loop(self):
+        while self._running:
+            with self._pending_cv:
+                if not self._pending:
+                    self._pending_cv.wait(0.5)
+                    continue
+                wait = self._pending[0][0] - time.monotonic()
+                if wait > 0:
+                    self._pending_cv.wait(wait)
+                    continue
+                _, width, height, pixels = self._pending.pop(0)
+            self._send_frame(width, height, pixels)
+
+    def _send_frame(self, width, height, pixels):
+        size = len(pixels)
+        with self._cpx_lock:
+            client = self._cpx_client
+        if client is None:
+            return
+
+        # Build CPX APP image header (11 bytes)
+        img_header = struct.pack('<BHHBBI',
+                                CPX_IMG_MAGIC,
+                                width, height,
+                                8, 0, size)
+        header_pkt = cpx_build(CPX_T_GAP8, CPX_T_HOST,
+                              CPX_F_APP, img_header, last=False)
+
+        # Split pixel data into CPX MTU-sized chunks
+        data_pkts = bytearray()
+        offset = 0
+        while offset < size:
+            chunk = pixels[offset:offset + CPX_MTU]
+            offset += len(chunk)
+            is_last = offset >= size
+            data_pkts.extend(cpx_build(CPX_T_GAP8, CPX_T_HOST,
+                                       CPX_F_APP, chunk, last=is_last))
+
+        try:
+            client.sendall(header_pkt + bytes(data_pkts))
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +407,9 @@ def main():
                    help='UDP port for camera frames from crazysim (default: 5200)')
     p.add_argument('--host', default='127.0.0.1',
                    help='Host where crazysim.py is running (default: 127.0.0.1)')
+    p.add_argument('--profile', default='',
+                   help='noise profile with a camera section (path or name in gazebo/noise_profiles)')
+    p.add_argument('--cf-id', type=int, default=0, help='drone number, for the per-drone seed')
     args = p.parse_args()
 
     CrazySimCPX(
@@ -322,6 +417,8 @@ def main():
         cflib_port=args.cflib_port,
         frame_port=args.frame_port,
         host=args.host,
+        profile=args.profile,
+        cf_id=args.cf_id,
     ).run()
 
 
