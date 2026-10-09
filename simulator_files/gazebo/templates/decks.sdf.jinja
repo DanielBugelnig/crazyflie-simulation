@@ -62,6 +62,47 @@
             <child>flowdeck</child>
         </joint>
 {%- endif %}
+{%- if euroc %}
+        <!-- EuRoC VI-sensor stereo rig (2x MT9V034): sensor emulation, nearly massless. The
+             poses come from euroc_rig.py (EuRoC calibration, rig tilted down, per camera
+             mounting error). Lens distortion and the sensor model are applied by the dataset
+             recorder; the cameras do not render this drone (visibility mask). -->
+        <link name="euroc_rig">
+            <pose>0 0 0 0 0 0</pose>
+            <inertial>
+                <mass>{{ mass.euroc }}</mass>
+{{- box_inertia(mass.euroc, 0.020, 0.120, 0.020) }}
+            </inertial>
+{%- for cam in euroc.cameras %}
+            <sensor name="euroc_{{ cam.name }}" type="camera">
+                <pose>{{ cam.pose }}</pose>
+                <topic>/cf_{{ cf_id }}/euroc/{{ cam.name }}</topic>
+                <always_on>1</always_on>
+                <update_rate>{{ euroc.fps }}</update_rate>
+                <camera>
+                    <camera_info_topic>/cf_{{ cf_id }}/euroc/{{ cam.name }}/camera_info</camera_info_topic>
+                    <horizontal_fov>{{ euroc.hfov }}</horizontal_fov>
+                    <image>
+                        <width>{{ euroc.width }}</width>
+                        <height>{{ euroc.height }}</height>
+                        <format>L8</format>
+                    </image>
+                    <clip>
+                        <near>0.02</near>
+                        <far>50</far>
+                    </clip>
+{%- if euroc.hide_own_drone %}
+                    <visibility_mask>{{ own_visual_mask }}</visibility_mask>
+{%- endif %}
+                </camera>
+            </sensor>
+{%- endfor %}
+        </link>
+        <joint name="euroc_rig_joint" type="fixed">
+            <parent>base_link</parent>
+            <child>euroc_rig</child>
+        </joint>
+{%- endif %}
 {%- if multiranger %}
         <!-- Multi-ranger deck on top of the body (30 x 30 x 10 mm) -->
         <link name="multiranger">

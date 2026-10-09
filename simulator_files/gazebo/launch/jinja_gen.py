@@ -8,12 +8,17 @@ import fnmatch
 import json
 import math
 import random
+import sys
 import numpy as np
 import yaml
 
+# euroc_rig.py (EuRoC stereo rig geometry) is shared with the dataset recorder
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools'))
+import euroc_rig  # noqa: E402
+
 # Nominal masses [kg]; a noise profile overrides them with measured values.
 # body = None keeps the default of the vehicle model.
-NOMINAL_MASS = {'body': None, 'aideck': 0.0044, 'flowdeck': 0.0016, 'multiranger': 0.0023}
+NOMINAL_MASS = {'body': None, 'aideck': 0.0044, 'flowdeck': 0.0016, 'multiranger': 0.0023, 'euroc': 0.0001}
 
 # Flow deck model (FlowDeckModel::Config in the plugin) without a profile: a
 # well textured floor, no ToF noise and no per-drone errors. The PMW3901 keeps
@@ -28,6 +33,9 @@ FLOWDECK_DEFAULTS = {
 
 # Deck flags reported to the firmware (SIM_DECK_* in CrtpUtils.h)
 DECK_FLOW2, DECK_MULTIRANGER, DECK_AI = 1 << 0, 1 << 1, 1 << 2
+
+# Visibility flag of the drone's own visuals, hidden from the EuRoC cameras
+OWN_VISUAL_FLAG = 1 << 1
 
 
 def get_file_contents(filepath):
@@ -155,6 +163,20 @@ def camera_parameters(profile, cf_id):
             ', '.join('%+.2f' % math.degrees(a) for a in rpy)))
     return params
 
+def euroc_parameters(profile, cf_id):
+    """EuRoC stereo rig (-d euroc) from the profile's euroc section: sensor poses and render settings."""
+    cfg = profile.get('euroc') or {}
+    if not cfg.get('enabled', False):
+        raise ValueError("-d euroc needs a profile with an enabled euroc section (e.g. -p euroc)")
+    width, height = euroc_rig.render_size(cfg)
+    cameras = []
+    for name, cam in euroc_rig.rig(cfg, profile.get('seed', 0), cf_id).items():
+        cameras.append({'name': name, 'pose': cam['gz_pose']})
+        print('{} mounting error (roll, pitch, yaw): {} deg'.format(
+            name, ', '.join('%+.2f' % math.degrees(a) for a in cam['mount_error_rpy'])))
+    return {'cameras': cameras, 'fps': cfg.get('capture_fps') or 20, 'hfov': cfg['horizontal_fov'],
+            'width': width, 'height': height, 'hide_own_drone': bool(cfg.get('hide_own_drone', True))}
+
 def read_jinja_parameters_from_file(filepath):
     if not filepath:
         return {}
@@ -176,6 +198,7 @@ if __name__ == "__main__":
     parser.add_argument('--camera', type=str2bool, default=False, help="Add the AI-deck camera sensor")
     parser.add_argument('--cam_frame_port', default=5200, help="UDP port the camera frames are sent to (crazysim_cpx.py)")
     parser.add_argument('--flowdeck', type=str2bool, default=False, help="Add the flow deck v2 (VL53L1x + PMW3901); the drone then flies without external pose")
+    parser.add_argument('--euroc', type=str2bool, default=False, help="Add the EuRoC VI-sensor stereo cameras (profile euroc section)")
     parser.add_argument('--multiranger', type=str2bool, default=False, help="Add the Multi-ranger deck (mass only for now)")
     parser.add_argument('--noise_profile', default='', help="YAML noise profile (path or name in noise_profiles/)")
     parser.add_argument('--output-file', help="sdf output file")
@@ -200,6 +223,12 @@ if __name__ == "__main__":
     d['imu'] = imu_parameters(profile, args.cf_id)
     d['flowdeck'] = args.flowdeck
     d['multiranger'] = args.multiranger
+    d['euroc'] = euroc_parameters(profile, args.cf_id) if args.euroc else None
+    # Visuals of this drone carry OWN_VISUAL_FLAG; the EuRoC cameras mask it out, other
+    # cameras (GUI, AI-deck) keep the default mask and still see the drone
+    d['own_visual'] = '<visibility_flags>{}</visibility_flags>'.format(OWN_VISUAL_FLAG) \
+        if d['euroc'] and d['euroc']['hide_own_drone'] else ''
+    d['own_visual_mask'] = 0x3FFFFFFF & ~OWN_VISUAL_FLAG  # ogre2 reserves the top two bits
     d['deck_flags'] = ((DECK_AI if args.camera else 0) | (DECK_FLOW2 if args.flowdeck else 0) |
                        (DECK_MULTIRANGER if args.multiranger else 0))
     d['flowdeck_params'] = flowdeck_parameters(profile, args.cf_id)

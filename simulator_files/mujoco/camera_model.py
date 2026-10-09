@@ -23,6 +23,8 @@ DEFAULTS = {
     'gamma': 2.2,               # display gamma of the rendered image, undone first
     'output_gamma': 2.2,        # 1.0: linear raw output
     'distortion': None,         # {k1, k2, k3, p1, p2, fx, fy, cx, cy} of an OpenCV calibration
+    'body_to_camera': None,     # 3x3 rotation body -> optical frame (x right, y down, z forward) for
+                                #   motion blur and rolling shutter; None: looking along body +x (AI-deck)
     'defocus_sigma_px': None,
     'exposure_time_s': None,    # exposure at relative exposure 1 (motion blur)
     'row_time_s': None,         # rolling shutter readout time per row
@@ -232,8 +234,9 @@ class CameraModel:
             self._init_maps(*frame.shape)
         lin = self.linear_lut[frame]
 
-        # Optics. Camera looks along body +x: image u (right) = -y, v (down) = -z,
-        # so yaw moves the scene along u and pitch along v (roll is not modelled).
+        # Optics. Rotation about the optical x/y axes moves the scene at the image
+        # centre by du = -f w_y, dv = f w_x (roll about the optical axis is not modelled).
+        # Default camera looks along body +x: u (right) = -y, v (down) = -z.
         for _ in range(self.prefilter_passes):
             lin = _binomial(lin)
         if self.distortion is not None:
@@ -241,8 +244,12 @@ class CameraModel:
         if c['defocus_sigma_px']:
             lin = _gaussian_blur(lin, c['defocus_sigma_px'])
         if rates is not None:
-            du = self.focal_px * rates[2]       # px/s
-            dv = -self.focal_px * rates[1]
+            if c['body_to_camera'] is not None:
+                w_cam = np.asarray(c['body_to_camera'], float).reshape(3, 3) @ np.asarray(rates, float)
+            else:
+                w_cam = (-rates[1], -rates[2], rates[0])
+            du = -self.focal_px * w_cam[1]       # px/s
+            dv = self.focal_px * w_cam[0]
             if c['exposure_time_s']:
                 t = c['exposure_time_s'] * self.exposure
                 lin = _motion_blur(lin, du * t, dv * t)

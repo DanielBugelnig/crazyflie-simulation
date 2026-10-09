@@ -39,6 +39,7 @@ function spawn_model() {
 	set -- ${@} --cam_frame_port $((5200+${N}))
 	set -- ${@} --flowdeck ${flowdeck}
 	set -- ${@} --multiranger ${multiranger}
+	set -- ${@} --euroc ${euroc}
 	[ -n "${profile}" ] && set -- ${@} --noise_profile ${profile}
 	set -- ${@} --output-file /tmp/${MODEL}_${N}.sdf
 
@@ -64,7 +65,8 @@ then
 	echo "Description: This script is used to spawn multiple vehicles in gazebo in a square formation."
 	echo "Usage: $0 [-n <num_vehicles>] [-m <vehicle_model>] [-w <world>] [-c] [-d <decks>] [-p <noise_profile>] [-H]"
 	echo "  -c  enable the AI-deck camera, streamed on tcp://127.0.0.1:<5050+N>"
-	echo "  -d  comma separated deck stack: aideck (same as -c), flowdeck, multiranger"
+	echo "  -d  comma separated deck stack: aideck (same as -c), flowdeck, multiranger,"
+	echo "      euroc (EuRoC VI-sensor stereo cameras, needs a profile with a euroc section: -p euroc)"
 	echo "  -p  noise profile: path or name in simulator_files/gazebo/noise_profiles (e.g. cf21_datasheet)"
 	echo "  -w  world: name in simulator_files/gazebo/worlds, or a path to an .sdf file (models in ../models)"
 	echo "  -H  headless: no Gazebo GUI (saves GPU time; stop with Ctrl+C)"
@@ -90,12 +92,14 @@ world=${WORLD:=crazysim_default}
 camera=${CAMERA:=0}
 flowdeck=0
 multiranger=0
+euroc=0
 for deck in ${DECKS//,/ }; do
 	case "${deck}" in
 		aideck) camera=1;;
 		flowdeck) flowdeck=1;;
 		multiranger) multiranger=1;;
-		*) echo "ERROR: unknown deck '${deck}' (supported: aideck, flowdeck, multiranger)"; exit 1;;
+		euroc) euroc=1;;
+		*) echo "ERROR: unknown deck '${deck}' (supported: aideck, flowdeck, multiranger, euroc)"; exit 1;;
 	esac
 done
 profile=${PROFILE:=}
