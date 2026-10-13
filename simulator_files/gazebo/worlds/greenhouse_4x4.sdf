@@ -1,0 +1,370 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="greenhouse_4x4">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <!-- Sensor systems so robots and drones (e.g. PX4 SITL) spawned here work -->
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+
+    <gravity>0 0 -9.81</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>0</latitude_deg>
+      <longitude_deg>0</longitude_deg>
+      <elevation>0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <!-- Just below the greenhouse floor mesh to avoid z-fighting -->
+          <pose>0 0 -0.01 0 0 0</pose>
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material>
+            <ambient>0.45 0.5 0.4 1</ambient>
+            <diffuse>0.45 0.5 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <include>
+      <uri>model://greenhouse_structure</uri>
+      <name>greenhouse_structure</name>
+      <pose>-8 -3.561 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_rail_400cm</uri>
+      <name>rail_r0</name>
+      <pose>0 2.25 0 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r0_p0</name>
+      <pose>-1.5 2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r0_p0</name>
+      <pose>-1.5 2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r0_p0</uri>
+      <name>tomato_r0_p0</name>
+      <pose>-1.5 2.25 0.368 0 0 -0.3155</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r0_p1</name>
+      <pose>-0.5 2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r0_p1</name>
+      <pose>-0.5 2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r0_p1</uri>
+      <name>tomato_r0_p1</name>
+      <pose>-0.5 2.25 0.368 0 0 1.3345</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r0_p2</name>
+      <pose>0.5 2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r0_p2</name>
+      <pose>0.5 2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r0_p2</uri>
+      <name>tomato_r0_p2</name>
+      <pose>0.5 2.25 0.368 0 0 -1.7092</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r0_p3</name>
+      <pose>1.5 2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r0_p3</name>
+      <pose>1.5 2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r0_p3</uri>
+      <name>tomato_r0_p3</name>
+      <pose>1.5 2.25 0.368 0 0 1.994</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r0_0</name>
+      <pose>-1 2.25 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r0_1</name>
+      <pose>1 2.25 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_rail_400cm</uri>
+      <name>rail_r1</name>
+      <pose>0 0.75 0 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r1_p0</name>
+      <pose>-1.5 0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r1_p0</name>
+      <pose>-1.5 0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r1_p0</uri>
+      <name>tomato_r1_p0</name>
+      <pose>-1.5 0.75 0.368 0 0 -2.9836</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r1_p1</name>
+      <pose>-0.5 0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r1_p1</name>
+      <pose>-0.5 0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r1_p1</uri>
+      <name>tomato_r1_p1</name>
+      <pose>-0.5 0.75 0.368 0 0 2.258</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r1_p2</name>
+      <pose>0.5 0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r1_p2</name>
+      <pose>0.5 0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r1_p2</uri>
+      <name>tomato_r1_p2</name>
+      <pose>0.5 0.75 0.368 0 0 -0.6495</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r1_p3</name>
+      <pose>1.5 0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r1_p3</name>
+      <pose>1.5 0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r1_p3</uri>
+      <name>tomato_r1_p3</name>
+      <pose>1.5 0.75 0.368 0 0 2.6314</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r1_0</name>
+      <pose>-1 0.75 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r1_1</name>
+      <pose>1 0.75 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_rail_400cm</uri>
+      <name>rail_r2</name>
+      <pose>0 -0.75 0 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r2_p0</name>
+      <pose>-1.5 -0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r2_p0</name>
+      <pose>-1.5 -0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r2_p0</uri>
+      <name>tomato_r2_p0</name>
+      <pose>-1.5 -0.75 0.368 0 0 -0.4894</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r2_p1</name>
+      <pose>-0.5 -0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r2_p1</name>
+      <pose>-0.5 -0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r2_p1</uri>
+      <name>tomato_r2_p1</name>
+      <pose>-0.5 -0.75 0.368 0 0 2.7694</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r2_p2</name>
+      <pose>0.5 -0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r2_p2</name>
+      <pose>0.5 -0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r2_p2</uri>
+      <name>tomato_r2_p2</name>
+      <pose>0.5 -0.75 0.368 0 0 2.9284</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r2_p3</name>
+      <pose>1.5 -0.75 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r2_p3</name>
+      <pose>1.5 -0.75 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r2_p3</uri>
+      <name>tomato_r2_p3</name>
+      <pose>1.5 -0.75 0.368 0 0 1.3349</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r2_0</name>
+      <pose>-1 -0.75 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r2_1</name>
+      <pose>1 -0.75 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_rail_400cm</uri>
+      <name>rail_r3</name>
+      <pose>0 -2.25 0 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r3_p0</name>
+      <pose>-1.5 -2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r3_p0</name>
+      <pose>-1.5 -2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r3_p0</uri>
+      <name>tomato_r3_p0</name>
+      <pose>-1.5 -2.25 0.368 0 0 -1.9176</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r3_p1</name>
+      <pose>-0.5 -2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r3_p1</name>
+      <pose>-0.5 -2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r3_p1</uri>
+      <name>tomato_r3_p1</name>
+      <pose>-0.5 -2.25 0.368 0 0 -2.0531</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r3_p2</name>
+      <pose>0.5 -2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r3_p2</name>
+      <pose>0.5 -2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r3_p2</uri>
+      <name>tomato_r3_p2</name>
+      <pose>0.5 -2.25 0.368 0 0 3.0619</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_soilbed</uri>
+      <name>soilbed_r3_p3</name>
+      <pose>1.5 -2.25 0.134 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_flowerpot</uri>
+      <name>flowerpot_r3_p3</name>
+      <pose>1.5 -2.25 0.296 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://tomato_r3_p3</uri>
+      <name>tomato_r3_p3</name>
+      <pose>1.5 -2.25 0.368 0 0 1.9306</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r3_0</name>
+      <pose>-1 -2.25 1.968 0 0 -1.5708</pose>
+    </include>
+    <include>
+      <uri>model://greenhouse_lamp</uri>
+      <name>lamp_r3_1</name>
+      <pose>1 -2.25 1.968 0 0 -1.5708</pose>
+    </include>
+  </world>
+</sdf>

@@ -53,6 +53,10 @@ CPX_HEADER_SIZE = 2   # routing byte + function byte
 CPX_MTU         = 1022  # WiFi CPX max payload
 
 CPX_IMG_MAGIC = 0xBC
+# Gazebo frames get a 9-byte APP packet [magic u8][stamp_us u64] ahead of the image header:
+# the simulation time the frame was rendered. Clients that only look for the 11-byte image
+# header skip it.
+CPX_STAMP_MAGIC = 0xBD
 
 # Frame chunks from the simulator. Gazebo: [magic u16][seq u16][total u16][width u16]
 # [height u16][stamp_us u64][wx f32][wy f32][wz f32] (body rates in rad/s).
@@ -140,7 +144,7 @@ class CrazySimCPX:
         self._camera_model = None
         self._link = {'stream_fps': None, 'latency_s': 0.0, 'latency_jitter_s': 0.0, 'drop_prob': 0.0}
         self._last_frame_time = 0.0
-        self._pending = []          # (send_time, width, height, pixels), ordered
+        self._pending = []          # (send_time, width, height, pixels, stamp_us), ordered
         self._pending_cv = threading.Condition()
         camera = (load_profile(profile).get('camera') or {}) if profile else {}
         if camera.get('enabled', False):
@@ -292,13 +296,15 @@ class CrazySimCPX:
                 break
 
             if len(pkt) >= FRAME_HEADER.size and struct.unpack_from('<H', pkt)[0] == FRAME_MAGIC:
-                _, seq, total, width, height, _, wx, wy, wz = FRAME_HEADER.unpack_from(pkt)
+                _, seq, total, width, height, stamp_us, wx, wy, wz = FRAME_HEADER.unpack_from(pkt)
                 chunk_data = pkt[FRAME_HEADER.size:]
                 rates = (wx, wy, wz)
+                frame_stamp_us = stamp_us
             elif len(pkt) >= FRAME_HEADER_OLD.size:
                 seq, total, width, height = FRAME_HEADER_OLD.unpack_from(pkt)
                 chunk_data = pkt[FRAME_HEADER_OLD.size:]
                 rates = None
+                frame_stamp_us = None
             else:
                 continue
 
@@ -315,14 +321,14 @@ class CrazySimCPX:
             # Reassemble
             pixels = b''.join(chunks[i] for i in range(expected_total))
             chunks = {}
-            self._on_frame(width, height, pixels, rates)
+            self._on_frame(width, height, pixels, rates, frame_stamp_us)
 
         frame_sock.close()
 
-    def _on_frame(self, width, height, pixels, rates):
+    def _on_frame(self, width, height, pixels, rates, stamp_us=None):
         """Camera model, then the WiFi link: frame rate, drops, latency."""
         if self._camera_model is None:
-            self._send_frame(width, height, pixels)
+            self._send_frame(width, height, pixels, stamp_us)
             return
         link = self._link
         now = time.monotonic()
@@ -341,12 +347,12 @@ class CrazySimCPX:
                   f'rays outside the rendered image (black); raise camera.horizontal_fov')
         delay = max(0.0, link['latency_s'] + self._rng.gauss(0.0, link['latency_jitter_s']))
         if delay == 0.0:
-            self._send_frame(width, height, pixels)
+            self._send_frame(width, height, pixels, stamp_us)
             return
         with self._pending_cv:
             # frames keep their order, like on a TCP stream
             send_time = max(now + delay, self._pending[-1][0] if self._pending else 0.0)
-            self._pending.append((send_time, width, height, pixels))
+            self._pending.append((send_time, width, height, pixels, stamp_us))
             self._pending_cv.notify()
 
     def _delayed_sender_loop(self):
@@ -359,10 +365,10 @@ class CrazySimCPX:
                 if wait > 0:
                     self._pending_cv.wait(wait)
                     continue
-                _, width, height, pixels = self._pending.pop(0)
-            self._send_frame(width, height, pixels)
+                _, width, height, pixels, stamp_us = self._pending.pop(0)
+            self._send_frame(width, height, pixels, stamp_us)
 
-    def _send_frame(self, width, height, pixels):
+    def _send_frame(self, width, height, pixels, stamp_us=None):
         size = len(pixels)
         with self._cpx_lock:
             client = self._cpx_client
@@ -376,6 +382,9 @@ class CrazySimCPX:
                                 8, 0, size)
         header_pkt = cpx_build(CPX_T_GAP8, CPX_T_HOST,
                               CPX_F_APP, img_header, last=False)
+        if stamp_us is not None:
+            header_pkt = cpx_build(CPX_T_GAP8, CPX_T_HOST, CPX_F_APP,
+                                   struct.pack('<BQ', CPX_STAMP_MAGIC, stamp_us), last=False) + header_pkt
 
         # Split pixel data into CPX MTU-sized chunks
         data_pkts = bytearray()

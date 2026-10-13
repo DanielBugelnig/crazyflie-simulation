@@ -119,6 +119,7 @@ struct imu_s {
 	uint8_t type;
 	union Axis3i16 acc;
 	union Axis3i16 gyro;
+	uint64_t stamp_us;        // Gazebo simulation time of the sample
 } __attribute__((packed));
 CHECKSIZE_RESPONSE(imu_s)
 

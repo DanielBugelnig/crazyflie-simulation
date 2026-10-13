@@ -293,7 +293,9 @@ void GzCrazyflieInterface::ImuCallback(const gz::msgs::IMU& imu_msg) {
 				 toSensorRaw(acc.Z(), acc_lsb)},
 		.gyro = {toSensorRaw(gyro.X(), gyro_lsb),
 				 toSensorRaw(gyro.Y(), gyro_lsb),
-				 toSensorRaw(gyro.Z(), gyro_lsb)}};
+				 toSensorRaw(gyro.Z(), gyro_lsb)},
+		.stamp_us = static_cast<uint64_t>(imu_msg.header().stamp().sec()) * 1000000ULL
+			+ imu_msg.header().stamp().nsec() / 1000};
 
 	crtpPacket_t msg;
 	msg.size = sizeof(m_imu_info);
