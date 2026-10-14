@@ -52,9 +52,10 @@ euroc:                         # VI-sensor stereo rig (-d euroc)
   horizontal_fov: 1.78         # rad (102 deg) rendered; the radtan lenses need 98 x 75 deg (cam1's
                                #   vertical extent decides at this aspect ratio)
   render_scale: 1              # renders 752x480 (render focal 305 px, the centre is upsampled 1.5x; EuRoC
-                               #   edges are ~1 px wide anyway). The SITL firmware runs on wall-clock time,
-                               #   so the sim must keep real time: measured real-time factor with both
-                               #   cameras 0.99 at scale 1, 0.65 at 1.5, 0.37 at 2 (RTX A2000 laptop)
+                               #   edges are ~1 px wide anyway). The SITL firmware follows the sim clock,
+                               #   so a higher scale only makes the recording slower: measured real-time
+                               #   factor with both cameras 0.99 at scale 1, 0.65 at 1.5, 0.37 at 2
+                               #   (RTX A2000 laptop)
   tilt_deg: 20.0               # rig pitched down ("front-down looking"); V1_01: 20 deg from the Vicon
                                #   marker calibration, 22 deg from gravity at rest
   mount_error_deg: 0.5         # random roll/pitch/yaw per camera vs the nominal calibration, drawn per drone
