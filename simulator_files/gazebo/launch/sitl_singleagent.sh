@@ -10,8 +10,12 @@ function spawn_model() {
 	N=$2 # Cf ID
 	X=$3 # spawn x position
 	Y=$4 # spawn y position
+	YAW=${5:-0} # spawn yaw [deg], counter-clockwise from +x
 	X=${X:=$X}
 	Y=${Y:=$Y}
+	# yaw as a quaternion about z (the firmware gets Gazebo's pose, so its estimate starts with this yaw)
+	QZ=$(python3 -c "import math; print(math.sin(math.radians(${YAW}) / 2))")
+	QW=$(python3 -c "import math; print(math.cos(math.radians(${YAW}) / 2))")
 	SUPPORTED_MODELS=("crazyflie", "crazyflie_thrust_upgrade")
 	if [[ " ${SUPPORTED_MODELS[*]} " != *"$MODEL"* ]];
 	then
@@ -44,9 +48,9 @@ function spawn_model() {
 
 	python3 ${@}
 
-	echo "Spawning ${MODEL}_${N} at ${X} ${Y}"
+	echo "Spawning ${MODEL}_${N} at ${X} ${Y}, yaw ${YAW} deg"
 
-    gz service -s /world/${world}/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean --timeout 300 --req 'sdf_filename: "/tmp/'${MODEL}_${N}'.sdf", pose: {position: {x:'${X}', y:'${Y}', z: 0.5}}, name: "'${MODEL}_${N}'", allow_renaming: 1'
+    gz service -s /world/${world}/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean --timeout 300 --req 'sdf_filename: "/tmp/'${MODEL}_${N}'.sdf", pose: {position: {x:'${X}', y:'${Y}', z: 0.5}, orientation: {x: 0, y: 0, z: '${QZ}', w: '${QW}'}}, name: "'${MODEL}_${N}'", allow_renaming: 1'
 	
 	echo "starting instance $N in $(pwd)"
 	$build_path/cf2 $((19950+${N})) > out.log 2> error.log &
@@ -62,7 +66,8 @@ function spawn_model() {
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]
 then
     echo "Description: This script is used to spawn a single vehicle in gazebo."
-	echo "Usage: $0 [-m <vehicle_model>] [-x <x_coordinate>] [-y <y_coordinate>] [-w <world>] [-c] [-d <decks>] [-p <noise_profile>] [-H]"
+	echo "Usage: $0 [-m <vehicle_model>] [-x <x_coordinate>] [-y <y_coordinate>] [-Y <yaw_deg>] [-w <world>] [-c] [-d <decks>] [-p <noise_profile>] [-H]"
+	echo "  -Y  spawn yaw in degrees, counter-clockwise from +x (default 0)"
 	echo "  -c  enable the AI-deck camera, streamed on tcp://127.0.0.1:<5050+N>"
 	echo "  -d  comma separated deck stack: aideck (same as -c), flowdeck, multiranger,"
 	echo "      euroc (EuRoC VI-sensor stereo cameras, needs a profile with a euroc section: -p euroc)"
@@ -72,7 +77,7 @@ then
 	exit 1
 fi
 
-while getopts m:x:y:w:cd:p:H option
+while getopts m:x:y:Y:w:cd:p:H option
 do
 	case "${option}"
 	in
@@ -83,6 +88,7 @@ do
 		H) HEADLESS=1;;
         x) X_CORD=${OPTARG};;
         y) Y_CORD=${OPTARG};;
+        Y) YAW_DEG=${OPTARG};;
 		w) WORLD=${OPTARG};;
 	esac
 done
@@ -106,6 +112,8 @@ profile=${PROFILE:=}
 [ -n "${profile}" ] && [ -f "${profile}" ] && profile=$(realpath "${profile}")
 x_cord=${X_CORD:=0}
 y_cord=${Y_CORD:=0}
+yaw_deg=${YAW_DEG:=0}
+[[ "${yaw_deg}" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { echo "ERROR: -Y needs a number in degrees, got '${yaw_deg}'"; exit 1; }
 vehicle_model=${VEHICLE_MODEL:="crazyflie"}
 export CF2_SIM_MODEL=gz_${vehicle_model}
 
@@ -138,7 +146,7 @@ gz sim -s -r --headless-rendering ${world_file} -v 3 &
 sleep 3
 
 n=0
-spawn_model ${vehicle_model} $(($n)) ${x_cord} ${y_cord}
+spawn_model ${vehicle_model} $(($n)) ${x_cord} ${y_cord} ${yaw_deg}
 
 trap "cleanup" SIGINT SIGTERM EXIT
 
