@@ -164,10 +164,10 @@ def camera_parameters(profile, cf_id):
     return params
 
 def euroc_parameters(profile, cf_id):
-    """EuRoC stereo rig (-d euroc) from the profile's euroc section: sensor poses and render settings."""
+    """Camera rig (-d euroc / -d corax) from the profile's euroc section: sensor poses and render settings."""
     cfg = profile.get('euroc') or {}
     if not cfg.get('enabled', False):
-        raise ValueError("-d euroc needs a profile with an enabled euroc section (e.g. -p euroc)")
+        raise ValueError("-d euroc / -d corax need a profile with an enabled euroc section (e.g. -p euroc, -p corax)")
     width, height = euroc_rig.render_size(cfg)
     cameras = []
     for name, cam in euroc_rig.rig(cfg, profile.get('seed', 0), cf_id).items():
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument('--camera', type=str2bool, default=False, help="Add the AI-deck camera sensor")
     parser.add_argument('--cam_frame_port', default=5200, help="UDP port the camera frames are sent to (crazysim_cpx.py)")
     parser.add_argument('--flowdeck', type=str2bool, default=False, help="Add the flow deck v2 (VL53L1x + PMW3901); the drone then flies without external pose")
-    parser.add_argument('--euroc', type=str2bool, default=False, help="Add the EuRoC VI-sensor stereo cameras (profile euroc section)")
+    parser.add_argument('--euroc', type=str2bool, default=False, help="Add the camera rig of the profile's euroc section (EuRoC stereo or Corax layout)")
     parser.add_argument('--multiranger', type=str2bool, default=False, help="Add the Multi-ranger deck (mass only for now)")
     parser.add_argument('--noise_profile', default='', help="YAML noise profile (path or name in noise_profiles/)")
     parser.add_argument('--output-file', help="sdf output file")

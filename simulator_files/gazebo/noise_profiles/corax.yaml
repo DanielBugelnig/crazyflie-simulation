@@ -1,0 +1,118 @@
+# Corax camera layout on the Crazyflie: two VIO cameras, one looking straight down and
+# one looking forward and 45 deg up, with the Crazyflie's own BMI088 IMU. For VIO
+# datasets in the EuRoC layout (OpenVINS etc.).
+#
+#   sim:      sitl_singleagent.sh -m crazyflie -w <world> -d corax -H   (-d corax defaults to -p corax)
+#   recorder: record_vio_dataset.py --profile corax --out <dir> --fly corridor
+#
+# The Corvus Drones Corax (ModalAI VOXL 2, Starling 2 based) has 2x AR0144 1 MP fisheye
+# cameras for VIO. For simplicity this profile keeps the EuRoC cameras (2x MT9V034,
+# 752x480, 20 Hz, radtan lenses, same sensor model and IMU as euroc.yaml) and only moves
+# them: everything except rig, euroc.cameras.*.T_body_cam and euroc.stereo_overlap is a
+# copy of euroc.yaml, keep the two in step. The cameras do not overlap, so OpenVINS
+# tracks them as two mono cameras (euroc_postprocess.py sets use_stereo false).
+
+rig: corax                     # dataset folder names (<time>_corax_<flight>) and OpenVINS configs
+                               #   (crazyflie_corax_noisy / _ideal); euroc when missing
+
+seed: 1                        # camera and IMU noise are reproducible for a given seed
+
+mass:                          # [kg]
+  euroc: 0.0001                # camera rig: sensor emulation only, as the EuRoC rig
+
+recording:
+  imu_rate_hz: 200             # as the EuRoC ADIS16448 stream; raw 1 kHz Gazebo samples are averaged
+                               #   over each interval first (anti-aliasing)
+
+sync:                          # EuRoC: cameras and IMU hardware synchronized, stamp = mid-exposure
+  camera_time_offset_s: 0.0    # camera stamp = true time + offset (OpenVINS: calib_cam_timeoffset)
+  camera_stamp_jitter_s: 0.0   # gaussian jitter on the stamp of a stereo pair (both cameras alike)
+  frame_drop_prob: 0.0         # stereo pairs lost
+
+imu:                           # Bosch BMI088 of the Crazyflie (same as vio_sensor_profile.yaml)
+  enabled: true
+  mode: plugin                 # keeps the Gazebo IMU topic noise free, the recorder adds the noise below
+  rate_hz: 1000                # Gazebo IMU sensor rate
+  gyro:
+    noise_density: 2.44e-4     # rad/s/sqrt(Hz)
+    bandwidth_hz: 116          # firmware IMU model only
+    turn_on_bias_std: 8.7e-3   # rad/s
+    bias_random_walk: 1.3e-6   # rad/s/sqrt(s)
+    scale_error_max: 0.01
+    misalignment_deg: 1.0
+  accel:
+    noise_density: [1.57e-3, 1.57e-3, 1.86e-3]  # m/s^2/sqrt(Hz)
+    bandwidth_hz: null
+    turn_on_bias_std: 0.098    # m/s^2
+    bias_random_walk: 1.0e-6   # m/s^2/sqrt(s)
+    scale_error_max: 0.0
+    misalignment_deg: 1.0
+  vibration:
+    enabled: false
+
+euroc:                         # camera rig (-d corax, the same deck as -d euroc with these poses)
+  enabled: true
+  stereo_overlap: false        # cam0 and cam1 see different parts of the scene: no cam_overlaps in the
+                               #   Kalibr chain and use_stereo false, OpenVINS tracks each camera on its own
+  capture_fps: 20              # Gazebo render rate of both cameras (they render in the same step)
+  stream_size: [752, 480]      # WVGA
+  horizontal_fov: 1.78         # rad (102 deg) rendered; the radtan lenses need 98 x 75 deg (cam1's
+                               #   vertical extent decides at this aspect ratio)
+  render_scale: 1              # renders 752x480 (render focal 305 px, the centre is upsampled 1.5x; EuRoC
+                               #   edges are ~1 px wide anyway). The SITL firmware follows the sim clock,
+                               #   so a higher scale only makes the recording slower: measured real-time
+                               #   factor with both cameras 0.99 at scale 1, 0.65 at 1.5, 0.37 at 2
+                               #   (RTX A2000 laptop)
+  mount_error_deg: 0.5         # random roll/pitch/yaw per camera vs the nominal calibration, drawn per drone
+  hide_own_drone: true         # the cameras do not render the Crazyflie's body, props and decks
+  cameras:                     # T_body_cam: camera (optical: x right, y down, z forward) -> Crazyflie body
+                               #   (x forward, y left, z up), row major; no tilt_deg. Lenses: EuRoC calibration
+    cam0:                      # straight down, top of the image towards the nose, 15 mm ahead of and
+                               #   15 mm below the IMU. On the ground it is closer to the floor than the
+                               #   20 mm near clip: its images are only usable once airborne
+      T_body_cam: [0.0, -1.0, 0.0, 0.015,
+                   -1.0, 0.0, 0.0, 0.0,
+                   0.0, 0.0, -1.0, -0.015,
+                   0.0, 0.0, 0.0, 1.0]
+      intrinsics: [458.654, 457.296, 367.215, 248.375]                            # fu, fv, cu, cv
+      distortion_coeffs: [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]   # radtan k1, k2, p1, p2
+    cam1:                      # forward, pitched 45 deg up, 25 mm ahead of and 5 mm above the IMU
+      T_body_cam: [0.0, 0.7071067812, 0.7071067812, 0.025,
+                   -1.0, 0.0, 0.0, 0.0,
+                   0.0, -0.7071067812, 0.7071067812, 0.005,
+                   0.0, 0.0, 0.0, 1.0]
+      intrinsics: [457.587, 456.134, 379.999, 255.238]
+      distortion_coeffs: [-0.28368365, 0.07451284, -0.00010473, -3.55590700e-05]
+  sensor:                      # MT9V034 image model (camera_model.py), applied offline by the recorder;
+                               #   each camera has its own noise maps and auto exposure (as on the VI-sensor)
+    # Fitted to V1_01 (399 frame pairs) with ~/bitcraze/dev/euroc_image_stats.py, no dark/flat frames exist:
+    #   noise var = 0.0188 DN * mean (both cameras, 9-247 DN), edge spread 0.9-1.0 px at low rate,
+    #   mean 135 DN with 9 % saturated pixels, motion blur vs gyro rate -> 15-16 ms exposure,
+    #   vignetting about 0.5 in the corners with a flat centre, cam1/cam0 brightness 0.90-1.02
+    gamma: 2.2                 # display gamma of the rendered image, undone first
+    output_gamma: 1.0          # linear 8-bit output (noise variance is linear in the mean DN)
+    defocus_sigma_px: 0.82     # lens blur on top of the render: edge spread of the sim output 0.95 px as EuRoC
+                               #   (0.69 px with 0.5, measured with the same script on sim frames)
+    exposure_time_s: 0.0135    # at relative exposure 1 (motion blur); typical renders need ~1.15 (greenhouse,
+                               #   indoor_room), so the auto exposure settles near EuRoC's 15.5 ms
+    row_time_s: null           # global shutter
+    vignetting: [0.0, 0.5]     # gain 1 - v1 r^2 - v2 r^4 (corner gain 0.5)
+    vignetting_center: null    # null: the principal point of each camera
+    auto_exposure:             # exposure time first, then analog gain (MT9V034: up to 4x)
+      target: 0.53             # mean linear brightness (EuRoC frames average 135 DN)
+      tau_frames: 3
+      max_exposure: 2.0        # 27 ms, below the 50 ms frame period
+      max_gain: 4.0
+    full_well_e: 13600         # electrons at 255 DN at gain 1 (slope of the noise fit, 255 / 0.0188)
+    read_noise_e: 10           # below what the fit resolves (< 0.3 DN), set small
+    black_level_dn: 0.0        # black level calibration of the MT9V034; darkest EuRoC content is ~20 DN
+    # Fixed pattern: the single-frame noise fit includes it, and EuRoC's stays linear in the mean up to
+    # 247 DN (no (prnu * mean)^2 term) with ~0 offset, so these are upper bounds
+    prnu_std: 0.002
+    dsnu_std_dn: 0.1
+    column_noise_dn: 0.05
+
+openvins:                      # written into the OpenVINS estimator_config.yaml (euroc_mav defaults otherwise,
+                               #   whose feature tracking is tuned for these 752x480 cameras)
+  init_imu_thresh: 0.15        # static init needs an accel "jerk": the Crazyflie takes off far more gently
+                               #   than the Firefly (EuRoC default 1.5 never triggers)

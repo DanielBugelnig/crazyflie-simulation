@@ -70,8 +70,14 @@ then
 	echo "  -Y  spawn yaw in degrees, counter-clockwise from +x (default 0)"
 	echo "  -c  enable the AI-deck camera, streamed on tcp://127.0.0.1:<5050+N>"
 	echo "  -d  comma separated deck stack: aideck (same as -c), flowdeck, multiranger,"
-	echo "      euroc (EuRoC VI-sensor stereo cameras, needs a profile with a euroc section: -p euroc)"
-	echo "  -p  noise profile: path or name in simulator_files/gazebo/noise_profiles (e.g. cf21_datasheet)"
+	echo "      euroc (EuRoC VI-sensor stereo cameras, needs a profile with a euroc section: -p euroc),"
+	echo "      corax (Corax layout of the same cameras: one down, one forward 45 deg up; -p corax unless -p is given)"
+	echo "  -p  noise profile: path or name in simulator_files/gazebo/noise_profiles:"
+	echo "        euroc           EuRoC stereo rig (with -d euroc): 2x MT9V034 752x480 20 Hz, 20 deg down, BMI088 IMU"
+	echo "        corax           the same cameras in the Corax layout (with -d corax, its default):"
+	echo "                        cam0 down, cam1 forward 45 deg up, no overlap"
+	echo "        cf21_datasheet  Crazyflie 2.1 datasheet sensor noise and nominal deck masses"
+	echo "        <path>          e.g. /workspace/configs/vio_sensor_profile.yaml for the AI-deck mono VIO (with -c)"
 	echo "  -w  world: name in simulator_files/gazebo/worlds, or a path to an .sdf file (models in ../models)"
 	echo "  -H  headless: no Gazebo GUI (saves GPU time; stop with Ctrl+C)"
 	exit 1
@@ -98,16 +104,18 @@ camera=${CAMERA:=0}
 flowdeck=0
 multiranger=0
 euroc=0
+default_profile=
 for deck in ${DECKS//,/ }; do
 	case "${deck}" in
 		aideck) camera=1;;
 		flowdeck) flowdeck=1;;
 		multiranger) multiranger=1;;
 		euroc) euroc=1;;
-		*) echo "ERROR: unknown deck '${deck}' (supported: aideck, flowdeck, multiranger, euroc)"; exit 1;;
+		corax) euroc=1; default_profile=corax;;
+		*) echo "ERROR: unknown deck '${deck}' (supported: aideck, flowdeck, multiranger, euroc, corax)"; exit 1;;
 	esac
 done
-profile=${PROFILE:=}
+profile=${PROFILE:=${default_profile}}
 # spawn_model runs in the build directory, so make a relative profile path absolute
 [ -n "${profile}" ] && [ -f "${profile}" ] && profile=$(realpath "${profile}")
 x_cord=${X_CORD:=0}

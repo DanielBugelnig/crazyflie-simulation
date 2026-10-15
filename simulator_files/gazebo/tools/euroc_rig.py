@@ -16,6 +16,9 @@ to the IMU are the EuRoC ones. The rig is pitched down by tilt_deg ("front-down
 looking" in the EuRoC paper, about 20 deg from the Vicon calibration of V1_01).
 Each camera gets a random mounting error (rotation in the camera frame) that is in
 the rendered images but not in the nominal calibration.
+
+Other rigs with the same cameras (-d corax, noise_profiles/corax.yaml) give each camera
+T_body_cam instead: camera -> body directly in the Crazyflie frame, tilt_deg is not used.
 """
 import math
 import random
@@ -83,6 +86,21 @@ def camera_names(cfg):
     return sorted((cfg.get('cameras') or {}).keys())
 
 
+def body_cam(cam, R_ba):
+    """Nominal camera -> body transform of one camera: T_body_cam as given (Crazyflie body frame,
+    e.g. the Corax rig), or T_imu_cam in the EuRoC IMU frame rotated by R_ba (adis -> body, with tilt)."""
+    T = np.eye(4)
+    if cam.get('T_body_cam') is not None:
+        T_body_cam = np.array(cam['T_body_cam'], float).reshape(4, 4)
+        T[:3, :3] = orthonormalize(T_body_cam[:3, :3])
+        T[:3, 3] = T_body_cam[:3, 3]
+        return T
+    T_adis_cam = np.array(cam['T_imu_cam'], float).reshape(4, 4)
+    T[:3, :3] = R_ba @ orthonormalize(T_adis_cam[:3, :3])
+    T[:3, 3] = R_ba @ T_adis_cam[:3, 3]
+    return T
+
+
 def rig(cfg, seed=0, cf_id=0):
     """Per camera: nominal and true camera -> body transforms and the Gazebo sensor pose.
 
@@ -94,11 +112,7 @@ def rig(cfg, seed=0, cf_id=0):
     errors = mount_errors(cfg, seed, cf_id, names)
     out = {}
     for name in names:
-        T_adis_cam = np.array(cfg['cameras'][name]['T_imu_cam'], float).reshape(4, 4)
-        R_ac = orthonormalize(T_adis_cam[:3, :3])
-        T = np.eye(4)
-        T[:3, :3] = R_ba @ R_ac
-        T[:3, 3] = R_ba @ T_adis_cam[:3, 3]
+        T = body_cam(cfg['cameras'][name], R_ba)
         T_true = T.copy()
         T_true[:3, :3] = T[:3, :3] @ rpy_to_matrix(*errors[name])
         R_gz = T_true[:3, :3] @ R_CAM_GZ
