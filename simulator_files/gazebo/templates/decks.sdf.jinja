@@ -73,6 +73,18 @@
                 <mass>{{ mass.euroc }}</mass>
 {{- box_inertia(mass.euroc, 0.020, 0.120, 0.020) }}
             </inertial>
+{%- if euroc.skid %}
+            <!-- skid under the body down to 2 cm below the lowest lens: the drone stands on the rig, its
+                 cameras above the ground (jinja_gen.py euroc_parameters) -->
+            <collision name="euroc_rig_skid">
+                <pose>0 0 {{ euroc.skid.z }} 0 0 0</pose>
+                <geometry>
+                    <box>
+                        <size>0.10 0.10 {{ euroc.skid.height }}</size>
+                    </box>
+                </geometry>
+            </collision>
+{%- endif %}
 {%- for cam in euroc.cameras %}
             <sensor name="euroc_{{ cam.name }}" type="camera">
                 <pose>{{ cam.pose }}</pose>

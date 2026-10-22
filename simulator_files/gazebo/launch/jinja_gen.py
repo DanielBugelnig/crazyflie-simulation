@@ -18,6 +18,8 @@ import euroc_rig  # noqa: E402
 
 # Nominal masses [kg]; a noise profile overrides them with measured values.
 # body = None keeps the default of the vehicle model.
+BODY_HALF_HEIGHT = 0.015    # half the height of the body collision box (model.sdf.jinja)
+RIG_LENS_CLEARANCE = 0.02   # lowest rig lens above the ground when the drone stands (= the cameras' near clip)
 NOMINAL_MASS = {'body': None, 'aideck': 0.0044, 'flowdeck': 0.0016, 'multiranger': 0.0023, 'euroc': 0.0001}
 
 # Flow deck model (FlowDeckModel::Config in the plugin) without a profile: a
@@ -174,8 +176,14 @@ def euroc_parameters(profile, cf_id):
         cameras.append({'name': name, 'pose': cam['gz_pose']})
         print('{} mounting error (roll, pitch, yaw): {} deg'.format(
             name, ', '.join('%+.2f' % math.degrees(a) for a in cam['mount_error_rpy'])))
+    # The rig hangs below the body (EuRoC: lenses 2.1-2.4 cm under the IMU, the body box reaches 1.5 cm): a skid
+    # under it, so the drone stands on the rig with every lens RIG_LENS_CLEARANCE above the ground instead of in it
+    lowest = min(float(c['pose'].split()[2]) for c in cameras)
+    bottom = min(lowest - RIG_LENS_CLEARANCE, -BODY_HALF_HEIGHT)
+    skid = {'z': '%.5f' % ((bottom - BODY_HALF_HEIGHT) / 2), 'height': '%.5f' % (-BODY_HALF_HEIGHT - bottom)}
     return {'cameras': cameras, 'fps': cfg.get('capture_fps') or 20, 'hfov': cfg['horizontal_fov'],
-            'width': width, 'height': height, 'hide_own_drone': bool(cfg.get('hide_own_drone', True))}
+            'width': width, 'height': height, 'hide_own_drone': bool(cfg.get('hide_own_drone', True)),
+            'skid': skid if float(skid['height']) > 0 else None}
 
 def read_jinja_parameters_from_file(filepath):
     if not filepath:
