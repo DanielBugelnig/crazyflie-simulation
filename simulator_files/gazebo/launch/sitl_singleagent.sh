@@ -50,8 +50,16 @@ function spawn_model() {
 
 	echo "Spawning ${MODEL}_${N} at ${X} ${Y}, yaw ${YAW} deg"
 
-    gz service -s /world/${world}/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean --timeout 300 --req 'sdf_filename: "/tmp/'${MODEL}_${N}'.sdf", pose: {position: {x:'${X}', y:'${Y}', z: 0.5}, orientation: {x: 0, y: 0, z: '${QZ}', w: '${QW}'}}, name: "'${MODEL}_${N}'", allow_renaming: 1'
-	
+	# The server answers the create service only once the world has loaded and runs, which for a large world on a
+	# cold file cache takes longer than the 3 s before this call. Wait for the world's stats (at most 600 s), then
+	# spawn once: a retried request could spawn a second, renamed drone.
+	local t0=${SECONDS}
+	until gz topic -e -t /world/${world}/stats -d 2 2>/dev/null | grep -q sim_time; do
+		if (( SECONDS - t0 > 600 )); then echo "ERROR: world ${world} not running after 600 s"; exit 1; fi
+	done
+	echo "world ${world} running after $(( SECONDS - t0 )) s"
+	gz service -s /world/${world}/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean --timeout 30000 --req 'sdf_filename: "/tmp/'${MODEL}_${N}'.sdf", pose: {position: {x:'${X}', y:'${Y}', z: 0.5}, orientation: {x: 0, y: 0, z: '${QZ}', w: '${QW}'}}, name: "'${MODEL}_${N}'", allow_renaming: 1'
+
 	echo "starting instance $N in $(pwd)"
 	$build_path/cf2 $((19950+${N})) > out.log 2> error.log &
 
