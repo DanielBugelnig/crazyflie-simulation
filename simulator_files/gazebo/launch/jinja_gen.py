@@ -12,9 +12,12 @@ import sys
 import numpy as np
 import yaml
 
-# euroc_rig.py (EuRoC stereo rig geometry) is shared with the dataset recorder
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools'))
-import euroc_rig  # noqa: E402
+# The camera rig geometry (euroc_rig) is part of the OASIS sensor models (<OASIS repo>/src/sensor_models), shared
+# with the PX4 model and the dataset post-processing. This fork sits in OASIS at external/crazyflie-firmware, so the
+# package is found relative to this file; $OASIS_SRC overrides the folder.
+sys.path.insert(0, os.environ.get('OASIS_SRC') or os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), *['..'] * 7, 'src')))
+from sensor_models import euroc_rig  # noqa: E402
 
 # Nominal masses [kg]; a noise profile overrides them with measured values.
 # body = None keeps the default of the vehicle model.

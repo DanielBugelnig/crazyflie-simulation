@@ -32,6 +32,7 @@ import os
 import random
 import socket
 import struct
+import sys
 import threading
 import time
 
@@ -149,7 +150,11 @@ class CrazySimCPX:
         camera = (load_profile(profile).get('camera') or {}) if profile else {}
         if camera.get('enabled', False):
             import numpy as np
-            from camera_model import DEFAULTS, CameraModel
+            # the camera model is part of the OASIS sensor models (<OASIS repo>/src/sensor_models); this fork sits
+            # in OASIS at external/crazyflie-firmware, $OASIS_SRC overrides the folder
+            sys.path.insert(0, os.environ.get('OASIS_SRC') or os.path.abspath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), *['..'] * 6, 'src')))
+            from sensor_models.camera_model import DEFAULTS, CameraModel
             self._np = np
             seed = int(load_profile(profile).get('seed', 0)) + cf_id + 2000
             self._camera_model = CameraModel({k: camera[k] for k in DEFAULTS if k in camera}, seed)
